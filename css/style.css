@@ -258,3 +258,6 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #sleep { position: fixed; inset: 0; background: #000; z-index: 80; }
 .setup { max-width: 560px; margin: 30px auto; }
+
+.field input.secret { -webkit-text-security: disc; }
+.field input::placeholder { color: var(--muted); opacity: .6; font-style: italic; }
