@@ -729,8 +729,8 @@ async function openSettings() {
   openSheet(`<div class="row between"><h3>Réglages</h3><button class="btn sm ghost" data-s-act="close">Fermer</button></div>
 
     <div class="set-group"><h4>Connexion à la Homey</h4>
-      <div class="field"><label>Adresse de la Homey</label><input type="url" data-s="homeyUrl" value="${esc(S.homeyUrl)}" placeholder="https://192-168-1-20.homey.homeylocal.com" autocapitalize="off" autocorrect="off" spellcheck="false"><span class="hint">Adresse locale sécurisée de la Homey (voir le guide).</span></div>
-      <div class="field"><label>Clé API</label><input type="password" data-s="cle" value="${esc(S.cle)}" autocomplete="off"><span class="hint">Créée dans Homey : Réglages &gt; Clés API. Elle reste sur cet iPad.</span></div>
+      <div class="field"><label>Adresse de la Homey</label><input type="text" inputmode="url" name="homey-adresse" autocomplete="off" data-lpignore="true" data-1p-ignore data-s="homeyUrl" value="${esc(S.homeyUrl)}" placeholder="exemple : https://192-168-1-XX.homey.homeylocal.com" autocapitalize="off" autocorrect="off" spellcheck="false"><span class="hint">Adresse locale sécurisée de la Homey (voir le guide).</span></div>
+      <div class="field"><label>Clé API</label><input type="text" class="secret" data-s="cle" value="${esc(S.cle)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="homey-api-key" data-lpignore="true" data-1p-ignore><span class="hint">Créée dans Homey : Réglages &gt; Clés API. Elle reste sur cet iPad.</span></div>
       <button class="btn sm" data-s-act="test">Tester la connexion</button> <span class="small muted" data-test></span>
     </div>
 
