@@ -350,3 +350,27 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
    On décale l'heure pour qu'elle ne soit pas cachée. */
 :fullscreen .top { padding-left: 88px; }
 :-webkit-full-screen .top { padding-left: 88px; }
+
+/* Volets : bandeaux de zone compacts, couleur pastel par zone */
+:root { --z-vie: #DCEBD8; --z-vie-ink: #3F6B45; --z-nuit: #DFE2F5; --z-nuit-ink: #4A5296; }
+@media (prefers-color-scheme: dark) { :root { --z-vie: rgba(150, 205, 160, .16); --z-vie-ink: #A9D8B0; --z-nuit: rgba(160, 170, 240, .17); --z-nuit-ink: #B9C0F5; } }
+.zone-bar { display: flex; align-items: center; gap: 16px; padding: 12px 18px; border-radius: 18px; margin-bottom: 14px; flex-wrap: wrap; }
+.zone-bar .zb-title { display: flex; flex-direction: column; min-width: 120px; }
+.zone-bar .zb-title b { font-size: 17px; font-weight: 600; }
+.zone-bar .zb-title span { font-size: 12px; opacity: .8; }
+.zone-bar input[type=range] { flex: 1; min-width: 160px; width: auto; }
+.zone-bar .btn { background: rgba(255, 255, 255, .55); }
+@media (prefers-color-scheme: dark) { .zone-bar .btn { background: rgba(255, 255, 255, .08); } }
+.zone-bar.z-vie { background: var(--z-vie); color: var(--z-vie-ink); }
+.zone-bar.z-nuit { background: var(--z-nuit); color: var(--z-nuit-ink); }
+.zone-bar.z-vie input[type=range]::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--z-vie-ink) var(--p, 50%), rgba(0,0,0,.08) var(--p, 50%)); }
+.zone-bar.z-nuit input[type=range]::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--z-nuit-ink) var(--p, 50%), rgba(0,0,0,.08) var(--p, 50%)); }
+.card.blind.z-vie { box-shadow: var(--shadow), inset 4px 0 0 var(--z-vie-ink); }
+.card.blind.z-nuit { box-shadow: var(--shadow), inset 4px 0 0 var(--z-nuit-ink); }
+
+/* Portail : tuile compacte */
+.card.portail { display: inline-flex; align-items: center; gap: 22px; padding: 14px 18px; width: auto; }
+.card.portail h2 { margin: 0 0 2px; }
+.card.portail .pv { font-size: 18px; font-weight: 500; }
+.card.portail .pv.ouvert { color: var(--warn); }
+.tag { white-space: nowrap; }

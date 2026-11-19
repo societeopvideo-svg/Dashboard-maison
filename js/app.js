@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119i';
-import { Homey, forecast, geocode } from './api.js?v=20261119i';
-import { icon, TABS } from './icons.js?v=20261119i';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119j';
+import { Homey, forecast, geocode } from './api.js?v=20261119j';
+import { icon, TABS } from './icons.js?v=20261119j';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -47,7 +47,7 @@ function toast(msg) {
 
 function setLocal(id, c, v) {
   const o = st.devices[id]?.capabilitiesObj?.[c];
-  if (o) o.value = v;
+  if (o) { o.value = v; o.lastUpdated = new Date().toISOString(); }
 }
 
 async function send(id, c, v, { optimistic = true } = {}) {
@@ -400,7 +400,7 @@ function cardLightsSummary() {
 
 function cardBlindsSummary() {
   const ids = [...C.volets.vie.items, ...C.volets.nuit.items];
-  const up = ids.filter((id) => cap(id, 'windowcoverings_state') === 'up').length;
+  const up = ids.filter((id) => blindInfo(id).open).length;
   const garage = cap(C.portail.capteur, 'garagedoor_closed');
   return `<div class="card tap" data-act="tab" data-id="volets"><h2>Volets</h2>
     <div class="row between"><div class="mid">${up}<span class="unit">ouverts</span></div><div class="mid">${ids.length - up}<span class="unit">fermés</span></div></div>
@@ -421,11 +421,34 @@ function viewHome() {
 }
 
 /* Volets */
-const STATE = { up: 'Ouvert', down: 'Fermé', idle: 'Arrêté' };
-function blindCtrl(id, group = false) {
-  const etat = cap(id, 'windowcoverings_state');
-  // Les volets ne remontent pas leur position réelle : on part de la dernière demande, sinon de l'état
-  const pos = st.lastReq[id] ?? (etat === 'down' ? 0 : etat === 'up' ? 100 : cap(id, 'windowcoverings_set') != null ? pct(cap(id, 'windowcoverings_set')) : 100);
+/* État réel d'un volet.
+   Homey garde deux informations : l'état (monter / stop / descendre) et la position (0 = fermé, 1 = ouvert).
+   Selon la commande utilisée (bouton, Alexa, flow), une seule des deux est mise à jour :
+   on retient donc la plus récente, ou la dernière demande faite depuis le dashboard. */
+function capTime(id, c) {
+  const t = Date.parse(st.devices[id]?.capabilitiesObj?.[c]?.lastUpdated || '');
+  return Number.isNaN(t) ? 0 : t;
+}
+function blindInfo(id) {
+  const state = cap(id, 'windowcoverings_state');
+  const set = cap(id, 'windowcoverings_set');
+  const tS = capTime(id, 'windowcoverings_state');
+  const tP = capTime(id, 'windowcoverings_set');
+  const req = st.lastReq[id];
+  const tR = req && typeof req === 'object' ? req.t : 0;
+  let p = null, label = null;
+  if (tR && tR >= tS && tR >= tP) p = req.v;
+  else if (typeof set === 'number' && tP > tS) p = pct(set);
+  else if (state === 'up') p = 100;
+  else if (state === 'down') p = 0;
+  else if (state === 'idle') { p = typeof set === 'number' ? pct(set) : null; label = 'Arrêté'; }
+  else if (typeof set === 'number') p = pct(set);
+  if (!label) label = p == null ? '–' : p >= 95 ? 'Ouvert' : p <= 5 ? 'Fermé' : `Ouvert à ${p} %`;
+  return { p, open: p == null ? null : p > 5, label };
+}
+
+function blindCtrl(id) {
+  const pos = blindInfo(id).p ?? 100;
   return `<div class="ctrl">
     <div class="btns">
       <button class="btn" data-act="blind" data-id="${id}" data-v="up" aria-label="Monter">▲</button>
@@ -434,25 +457,38 @@ function blindCtrl(id, group = false) {
     </div>
     <span class="small muted" data-pos="${id}">${pos} %</span>
   </div>
-  <input type="range" min="0" max="100" step="5" value="${pos}" data-range="blind" data-id="${id}" aria-label="Position"${group ? '' : ''}>`;
+  <input type="range" min="0" max="100" step="5" value="${pos}" data-range="blind" data-id="${id}" aria-label="Position">`;
 }
 
 function viewBlinds() {
-  const zone = (title, z) => `<div class="zone-card">
-      <div class="section-head"><h2>${title}</h2><span class="small muted">toute la zone</span></div>
-      ${blindCtrl(z.groupe, true)}
+  const zone = (title, z, cls) => {
+    const pos = blindInfo(z.groupe).p ?? 100;
+    const open = z.items.filter((id) => blindInfo(id).open).length;
+    return `<div class="zone-bar ${cls}">
+      <div class="zb-title"><b>${title}</b><span>${open} ouvert${open > 1 ? 's' : ''} sur ${z.items.length}</span></div>
+      <div class="btns">
+        <button class="btn sm" data-act="blind" data-id="${z.groupe}" data-v="up" aria-label="Monter toute la zone">▲</button>
+        <button class="btn sm" data-act="blind" data-id="${z.groupe}" data-v="idle" aria-label="Stop">■</button>
+        <button class="btn sm" data-act="blind" data-id="${z.groupe}" data-v="down" aria-label="Descendre toute la zone">▼</button>
+      </div>
+      <input type="range" min="0" max="100" step="5" value="${pos}" data-range="blind" data-id="${z.groupe}" aria-label="Position de toute la zone">
+      <span class="small" data-pos="${z.groupe}">${pos} %</span>
     </div>
-    <div class="grid dense" style="margin-bottom:28px">${z.items.map((id) => `<div class="card blind">
-      <div class="row between"><div class="name">${esc(nm(id))}</div><span class="tag ${cap(id, 'windowcoverings_state') === 'up' ? 'accent' : ''}">${STATE[cap(id, 'windowcoverings_state')] || '–'}</span></div>
+    <div class="grid dense" style="margin-bottom:26px">${z.items.map((id) => {
+      const inf = blindInfo(id);
+      return `<div class="card blind ${cls}">
+      <div class="row between"><div class="name">${esc(nm(id))}</div><span class="tag ${inf.open ? 'accent' : ''}">${inf.label}</span></div>
       ${blindCtrl(id)}
-    </div>`).join('')}</div>`;
+    </div>`;
+    }).join('')}</div>`;
+  };
   const closed = cap(C.portail.capteur, 'garagedoor_closed');
   return `<h1>Volets</h1>
-    ${zone('Zone vie', C.volets.vie)}
-    ${zone('Zone nuit', C.volets.nuit)}
-    <div class="card row between" style="max-width:520px">
-      <div><h2 style="margin-bottom:4px">Portail</h2><div class="mid">${closed === false ? 'Ouvert' : closed === true ? 'Fermé' : '–'}</div></div>
-      <button class="btn primary" data-act="portail">${closed === false ? 'Fermer' : 'Ouvrir'}</button>
+    ${zone('Zone vie', C.volets.vie, 'z-vie')}
+    ${zone('Zone nuit', C.volets.nuit, 'z-nuit')}
+    <div class="card portail">
+      <div><h2>Portail</h2><div class="pv ${closed === false ? 'ouvert' : ''}">${closed === false ? 'Ouvert' : closed === true ? 'Fermé' : '–'}</div></div>
+      <button class="btn sm primary" data-act="portail">${closed === false ? 'Fermer' : 'Ouvrir'}</button>
     </div>`;
 }
 
@@ -688,7 +724,7 @@ const actions = {
   settings() { openSettings(); },
   async blind({ id, v }) {
     await send(id, 'windowcoverings_state', v).catch(() => {});
-    if (v !== 'idle') { st.lastReq[id] = v === 'up' ? 100 : 0; store.set('lastReq', st.lastReq); }
+    if (v !== 'idle') { st.lastReq[id] = { v: v === 'up' ? 100 : 0, t: Date.now() }; store.set('lastReq', st.lastReq); }
   },
   async portail() {
     const closed = cap(C.portail.capteur, 'garagedoor_closed');
@@ -747,7 +783,7 @@ document.addEventListener('change', (e) => {
   if (!r) return;
   const id = r.dataset.id, v = Number(r.value) / 100;
   if (r.dataset.range === 'blind') {
-    st.lastReq[id] = Number(r.value); store.set('lastReq', st.lastReq);
+    st.lastReq[id] = { v: Number(r.value), t: Date.now() }; store.set('lastReq', st.lastReq);
     send(id, 'windowcoverings_set', v, { optimistic: false }).catch(() => {});
   } else if (r.dataset.range === 'dim') {
     send(id, 'dim', v, { optimistic: false }).catch(() => {});
