@@ -99,6 +99,7 @@ export const DEFAUTS = {
   coefFHE: 1.04,
   iconStyle: 'line',
   commune: '',
+  favoris: [],
   lat: null,
   lon: null,
   reveil: false,

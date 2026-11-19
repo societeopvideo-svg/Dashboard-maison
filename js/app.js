@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119d';
-import { Homey, forecast, geocode } from './api.js?v=20261119d';
-import { icon, TABS } from './icons.js?v=20261119d';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119g';
+import { Homey, forecast, geocode } from './api.js?v=20261119g';
+import { icon, TABS } from './icons.js?v=20261119g';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -213,7 +213,24 @@ function render() {
   if (fire && !f) { f = document.createElement('div'); f.id = 'fire'; f.className = 'fire'; document.body.appendChild(f); }
   if (f) { if (fire) f.innerHTML = `<div>Fumée détectée<div class="small" style="font-weight:400;margin-top:12px">${esc(fire.sub)}</div></div>`; else f.remove(); }
   paintRanges();
+  squareTiles();
 }
+
+// Tuiles avatar carrées, à la hauteur de la carte météo (sauf sur petit écran)
+function squareTiles() {
+  const wx = document.querySelector('.home-top > .card');
+  const col = document.querySelector('.home-top .people-col');
+  const tiles = document.querySelectorAll('.home-top .avatar.tile');
+  if (!wx || !col || !tiles.length) return;
+  // deux passes : la largeur des tuiles change la hauteur de la météo
+  for (let i = 0; i < 2; i++) {
+    const H = wx.offsetHeight;
+    const vertical = getComputedStyle(col).flexDirection === 'column';
+    const side = Math.round(Math.min(vertical ? (H - 18) / 2 : H, 260));
+    tiles.forEach((t) => { t.style.width = `${side}px`; t.style.height = `${side}px`; });
+  }
+}
+window.addEventListener('resize', squareTiles);
 
 function paintRanges() {
   document.querySelectorAll('input[type=range]').forEach((r) => r.style.setProperty('--p', `${((r.value - r.min) / (r.max - r.min)) * 100}%`));
@@ -243,8 +260,8 @@ function cardWeather() {
     }).join('') + '</div>';
   }
   return `<div class="card">
-    <h2>Météo</h2>
-    <div class="meteo-now">
+    <h2>Météo${S.commune ? ` · <span class="wx-place">${esc(S.commune)}</span>` : ''}</h2>
+    <div class="meteo-body"><div class="meteo-now">
       <div class="big">${nf(t, 1)}<span class="unit">°C</span></div>
       <div class="meteo-facts">
         <span>Humidité</span><b>${nf(cap(M.exterieur, 'measure_humidity'), 0)} %</b>
@@ -253,7 +270,7 @@ function cardWeather() {
         <span>Pluie 24 h</span><b>${nf(cap(M.pluie, 'measure_rain.24h'), 1)} mm</b>
         <span>Pression</span><b>${nf(cap(M.station, 'measure_pressure'), 0)} hPa</b>
       </div>
-    </div>${fc}
+    </div>${fc}</div>
   </div>`;
 }
 
@@ -345,7 +362,7 @@ function findUser(devId, userId) {
 }
 
 function cardsPresence() {
-  return C.presence.map((id) => avatarHTML(id, 'tile')).join('');
+  return `<div class="people-col">${C.presence.map((id) => avatarHTML(id, 'tile')).join('')}</div>`;
 }
 
 /* Caméras : dernière image transmise à Homey */
@@ -564,10 +581,10 @@ function viewPlugs() {
 }
 
 /* ---------- Feuilles ---------- */
-function openSheet(html, onMount) {
+function openSheet(html, onMount, cls = '') {
   st.sheet = true;
   const root = $('#sheet-root');
-  root.innerHTML = `<div class="sheet-bg"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  root.innerHTML = `<div class="sheet-bg ${cls}"><div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div></div>`;
   root.firstChild.addEventListener('click', (e) => { if (e.target === root.firstChild) closeSheet(); });
   onMount?.(root.querySelector('.sheet'));
 }
@@ -848,66 +865,70 @@ async function setPin() {
 }
 
 /* ---------- Réglages ---------- */
-async function openSettings() {
+async function openSettings(scroll = 0) {
   if (!(await unlock())) return;
   const motion = visible().filter((d) => has(d.id, 'alarm_motion'));
   const users = Object.values(st.users || {});
   const styleSeg = [['line', 'Trait fin'], ['solid', 'Plein'], ['color', 'Couleur']];
   const av = C.presence.map((id) => {
     const a = S.avatars[id] || {};
-    return `<div class="set-group" data-av="${id}">
-      <div class="row" style="gap:18px;align-items:flex-start">${avatarHTML(id)}
-        <div style="flex:1">
-          <div class="field"><label>Compte Homey (avatar)</label><select data-s="avuser" data-id="${id}"><option value="">Automatique</option>${users.map((u) => `<option value="${esc(u.id)}" ${a.user === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
-          <div class="row wrap"><label class="btn sm ghost" style="padding:0 14px">Remplacer par une photo<input type="file" accept="image/*" data-s="avphoto" data-id="${id}" hidden></label>${a.photo ? `<button class="btn sm ghost" data-s-act="avreset" data-id="${id}">Revenir à l’avatar Homey</button>` : ''}</div>
-          <div class="field" style="margin-top:12px"><label>Zoom</label><input type="range" min="1" max="3" step="0.05" value="${a.zoom || 1}" data-s="avzoom" data-id="${id}"></div>
-          <div class="field"><label>Centrage horizontal</label><input type="range" min="-30" max="30" step="1" value="${a.x || 0}" data-s="avx" data-id="${id}"></div>
-          <div class="field"><label>Centrage vertical</label><input type="range" min="-30" max="30" step="1" value="${a.y || 0}" data-s="avy" data-id="${id}"></div>
-        </div></div></div>`;
+    return `<div class="card set-card" data-av="${id}"><h2>Avatar</h2>
+      <div class="row" style="gap:18px;align-items:stretch">${avatarHTML(id, 'tile set-tile')}
+        <div style="flex:1;min-width:0">
+          <div class="field"><label>Compte Homey</label><select data-s="avuser" data-id="${id}"><option value="">Automatique</option>${users.map((u) => `<option value="${esc(u.id)}" ${a.user === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+          <div class="row wrap"><label class="btn sm ghost" style="padding:0 14px">Choisir une photo<input type="file" accept="image/*" data-s="avphoto" data-id="${id}" hidden></label>${a.photo ? `<button class="btn sm ghost" data-s-act="avreset" data-id="${id}">Revenir à l’avatar Homey</button>` : ''}</div>
+        </div></div>
+      <div class="field" style="margin-top:14px"><label>Zoom</label><input type="range" min="1" max="3" step="0.05" value="${a.zoom || 1}" data-s="avzoom" data-id="${id}"></div>
+      <div class="field"><label>Centrage horizontal</label><input type="range" min="-30" max="30" step="1" value="${a.x || 0}" data-s="avx" data-id="${id}"></div>
+      <div class="field"><label>Centrage vertical</label><input type="range" min="-30" max="30" step="1" value="${a.y || 0}" data-s="avy" data-id="${id}"></div>
+    </div>`;
   }).join('');
 
-  openSheet(`<div class="row between"><h3>Réglages</h3><button class="btn sm ghost" data-s-act="close">Fermer</button></div>
+  openSheet(`<div class="set-head"><h1>Réglages</h1><button class="btn primary" data-s-act="close">Fermer</button></div>
+  ${users.length ? '' : '<div class="card set-note">La Homey ne donne pas la liste des comptes : la clé API n’a sans doute pas le droit « Utilisateurs : voir ». Sans lui, les avatars Homey ne s’affichent pas (tu peux mettre une photo à la place).</div>'}
+  <div class="grid set-grid">
 
-    <div class="set-group"><h4>Connexion à la Homey</h4>
-      <div class="field"><label>Adresse de la Homey</label><input type="text" inputmode="url" name="homey-adresse" autocomplete="off" data-lpignore="true" data-1p-ignore data-s="homeyUrl" value="${esc(S.homeyUrl)}" placeholder="exemple : https://192-168-1-XX.homey.homeylocal.com" autocapitalize="off" autocorrect="off" spellcheck="false"><span class="hint">Adresse locale sécurisée de la Homey (voir le guide).</span></div>
-      <div class="field"><label>Clé API</label><input type="text" class="secret" data-s="cle" value="${esc(S.cle)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="homey-api-key" data-lpignore="true" data-1p-ignore><span class="hint">Créée dans Homey : Réglages &gt; Clés API. Elle reste sur cet iPad.</span></div>
-      <button class="btn sm" data-s-act="test">Tester la connexion</button> <span class="small muted" data-test></span>
+    <div class="card set-card"><h2>Connexion à la Homey</h2>
+      <div class="field"><label>Adresse de la Homey</label><input type="text" inputmode="url" name="homey-adresse" autocomplete="off" data-lpignore="true" data-1p-ignore data-s="homeyUrl" value="${esc(S.homeyUrl)}" placeholder="exemple : https://192-168-1-XX.homey.homeylocal.com" autocapitalize="off" autocorrect="off" spellcheck="false"><span class="hint">Adresse locale sécurisée de la Homey.</span></div>
+      <div class="field"><label>Clé API</label><input type="text" class="secret" data-s="cle" value="${esc(S.cle)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="homey-api-key" data-lpignore="true" data-1p-ignore><span class="hint">Elle reste sur cet appareil.</span></div>
+      <div class="row wrap"><button class="btn sm" data-s-act="test">Tester la connexion</button><span class="small muted" data-test></span></div>
     </div>
 
-    <div class="set-group"><h4>Météo</h4>
-      <div class="field"><label>Commune pour les prévisions</label><div class="row"><input type="text" data-s="communeQ" value="${esc(S.commune)}" style="flex:1"><button class="btn sm" data-s-act="geo">Chercher</button></div><span class="hint" data-geo>${S.lat != null ? `Position arrondie : ${nf(S.lat, 2)}, ${nf(S.lon, 2)}` : ''}</span></div>
+    <div class="card set-card"><h2>Météo</h2>
+      <div class="field"><label>Commune affichée</label><div class="mid" style="font-size:22px">${S.commune ? esc(S.commune) : '<span class="muted">Aucune</span>'}</div></div>
+      ${(S.favoris || []).length ? `<div class="field"><label>Favoris (touche pour choisir)</label><div class="chips">${S.favoris.map((f, i) => `<span class="chip ${f.name === S.commune && f.lat === S.lat ? 'on' : ''}"><button data-s-act="favpick" data-i="${i}">${esc(f.name)}${f.admin ? ` <span class="muted">${esc(f.admin)}</span>` : ''}</button><button class="x" data-s-act="favdel" data-i="${i}" aria-label="Retirer">×</button></span>`).join('')}</div></div>` : ''}
+      <div class="field"><label>Ajouter une commune</label><div class="row"><input type="text" data-s="communeQ" value="" placeholder="ex. : Montpellier" style="flex:1"><button class="btn sm" data-s-act="geo">Chercher</button></div><span class="hint" data-geo>Les communes choisies sont gardées en favoris.</span><div class="chips" data-georesults></div></div>
     </div>
 
-    <div class="set-group"><h4>Électricité</h4>
-      <div class="row wrap" style="gap:14px">
-        <div class="field" style="flex:1;min-width:150px"><label>Prix du kWh TTC (€)</label><input type="number" step="0.0001" min="0" data-s="prixKwh" value="${S.prixKwh}"></div>
-        <div class="field" style="flex:1;min-width:150px"><label>Abonnement TTC (€/mois)</label><input type="number" step="0.01" min="0" data-s="aboMois" value="${S.aboMois}"></div>
-        <div class="field" style="flex:1;min-width:150px"><label>Coefficient FHE</label><input type="number" step="0.01" min="0" max="3" data-s="coefFHE" value="${S.coefFHE}"><span class="hint">FHE = Hoymiles × ce nombre</span></div>
-      </div>
+    <div class="card set-card"><h2>Électricité</h2>
+      <div class="field"><label>Prix du kWh TTC (€)</label><input type="number" step="0.0001" min="0" data-s="prixKwh" value="${S.prixKwh}"></div>
+      <div class="field"><label>Abonnement TTC (€/mois)</label><input type="number" step="0.01" min="0" data-s="aboMois" value="${S.aboMois}"></div>
+      <div class="field"><label>Coefficient FHE</label><input type="number" step="0.01" min="0" max="3" data-s="coefFHE" value="${S.coefFHE}"><span class="hint">FHE = Hoymiles × ce nombre</span></div>
     </div>
 
-    <div class="set-group"><h4>Thème et écran</h4>
+    <div class="card set-card"><h2>Thème et écran</h2>
       <div class="field"><label>Style des icônes</label><div class="seg">${styleSeg.map(([v, l]) => `<button class="${S.iconStyle === v ? 'on' : ''}" data-s-act="style" data-v="${v}">${l}</button>`).join('')}</div></div>
-      <div class="row between" style="margin:8px 0 12px"><div><div>Réveil à l’approche</div><div class="small muted">L’écran s’éteint après 3 min et se rallume quand le détecteur voit quelqu’un.</div></div><button class="switch ${S.reveil ? 'on' : ''}" data-s-act="reveil"></button></div>
+      <div class="row between" style="margin:8px 0 12px;gap:14px"><div><div>Réveil à l’approche</div><div class="small muted">L’écran s’éteint après 3 min et se rallume quand le détecteur voit quelqu’un.</div></div><button class="switch ${S.reveil ? 'on' : ''}" data-s-act="reveil"></button></div>
       ${S.reveil ? `<div class="field"><label>Détecteur de mouvement</label><select data-s="reveilCapteur"><option value="">Choisir…</option>${motion.map((d) => `<option value="${d.id}" ${S.reveilCapteur === d.id ? 'selected' : ''}>${esc(nm(d.id))}</option>`).join('')}</select><span class="hint">Jamais la caméra de l’iPad.</span></div>` : ''}
     </div>
 
-    <div class="set-group"><h4>Présence</h4><p class="small" style="margin-top:0">Les photos restent sur cet iPad. Anneau en couleur : présent ; gris : absent.</p>${users.length ? '' : '<p class="small" style="color:var(--warn)">La Homey ne donne pas la liste des comptes : la clé API n’a sans doute pas le droit « Utilisateurs : voir ». Sans lui, les avatars Homey ne peuvent pas s’afficher (tu peux quand même mettre une photo).</p>'}</div>${av}
+    ${av}
 
-    <div class="set-group"><h4>Verrou des réglages</h4>
-      ${lock.hash ? '' : '<p class="small" style="color:var(--warn);margin-top:0">Aucun code pour l’instant : choisis-en un pour protéger les réglages.</p>'}
+    <div class="card set-card"><h2>Verrou des réglages</h2>
+      ${lock.hash ? '<p class="small muted" style="margin-top:0">Les réglages s’ouvrent avec Face ID ou ton code.</p>' : '<p class="small" style="color:var(--warn);margin-top:0">Aucun code pour l’instant : choisis-en un pour protéger les réglages.</p>'}
       <div class="row wrap"><button class="btn sm" data-s-act="pin">${lock.hash ? 'Changer le code' : 'Choisir un code'}</button>
       ${lock.hash ? (lock.cred ? '<button class="btn sm ghost" data-s-act="faceoff">Retirer Face ID</button>' : '<button class="btn sm" data-s-act="faceon">Activer Face ID</button>') : ''}</div>
-    </div>`, bindSettings);
+    </div>
+  </div>`, (el) => { bindSettings(el); if (scroll) el.scrollTop = scroll; }, 'full');
   paintRanges();
 }
 
 function bindSettings(el) {
-  const reopen = () => { closeSheet(); st.unlockedUntil = Math.max(st.unlockedUntil, Date.now() + 60e3); openSettings(); };
+  const reopen = () => { const sc = el.scrollTop; closeSheet(); st.unlockedUntil = Math.max(st.unlockedUntil, Date.now() + 60e3); openSettings(sc); };
   const avs = (id) => (S.avatars[id] = S.avatars[id] || {});
   const applyAvatar = (id) => {
     const box = el.querySelector(`[data-av="${id}"] .avatar`);
-    if (box) box.outerHTML = avatarHTML(id);
+    if (box) box.outerHTML = avatarHTML(id, 'tile set-tile');
   };
 
   el.addEventListener('change', async (e) => {
@@ -958,21 +979,32 @@ function bindSettings(el) {
     } else if (a === 'geo') {
       const q = el.querySelector('[data-s="communeQ"]').value.trim();
       const out = el.querySelector('[data-geo]');
+      const box = el.querySelector('[data-georesults]');
       if (!q) return;
-      out.textContent = 'Recherche…';
+      out.textContent = 'Recherche…'; box.innerHTML = '';
       try {
         const r = await geocode(q);
         if (!r.length) { out.textContent = 'Commune introuvable.'; return; }
-        const c = r[0];
-        S.commune = c.name; S.lat = Math.round(c.latitude * 100) / 100; S.lon = Math.round(c.longitude * 100) / 100;
-        saveSettings();
-        out.textContent = `${c.name}${c.admin2 ? ', ' + c.admin2 : ''} · position arrondie ${nf(S.lat, 2)}, ${nf(S.lon, 2)}`;
-        refreshWeather(true);
+        out.textContent = 'Touche la bonne commune :';
+        el._geo = r;
+        box.innerHTML = r.map((c, i) => `<span class="chip"><button data-s-act="geopick" data-i="${i}">${esc(c.name)} <span class="muted">${esc(c.admin2 || c.admin1 || '')}</span></button></span>`).join('');
       } catch { out.textContent = 'Recherche impossible pour le moment.'; }
+    } else if (a === 'geopick' || a === 'favpick') {
+      const src = a === 'geopick' ? el._geo?.[b.dataset.i] : S.favoris?.[b.dataset.i];
+      if (!src) return;
+      const f = a === 'geopick'
+        ? { name: src.name, admin: src.admin2 || src.admin1 || '', lat: Math.round(src.latitude * 100) / 100, lon: Math.round(src.longitude * 100) / 100 }
+        : src;
+      S.commune = f.name; S.lat = f.lat; S.lon = f.lon;
+      S.favoris = [f, ...(S.favoris || []).filter((x) => !(x.lat === f.lat && x.lon === f.lon))].slice(0, 10);
+      saveSettings(); refreshWeather(true); reopen();
+    } else if (a === 'favdel') {
+      S.favoris = (S.favoris || []).filter((_, i) => String(i) !== b.dataset.i);
+      saveSettings(); reopen();
     } else if (a === 'style') { S.iconStyle = b.dataset.v; saveSettings(); renderTabs(); reopen(); }
     else if (a === 'reveil') { S.reveil = !S.reveil; saveSettings(); reopen(); }
     else if (a === 'avreset') { delete avs(b.dataset.id).photo; saveSettings(); reopen(); }
-    else if (a === 'pin') { closeSheet(); await setPin(); st.unlockedUntil = Date.now() + 60e3; openSettings(); }
+    else if (a === 'pin') { const sc = el.scrollTop; closeSheet(); await setPin(); st.unlockedUntil = Date.now() + 60e3; openSettings(sc); }
     else if (a === 'faceon') { const ok = await registerFaceId(); toast(ok ? 'Face ID activé' : 'Face ID non activé'); reopen(); }
     else if (a === 'faceoff') { lock.cred = null; store.set('lock', lock); reopen(); }
   });
@@ -1004,8 +1036,34 @@ function armSleep() {
 function wake() { $('#sleep').hidden = true; armSleep(); }
 function wakeOnMotion() { if (S.reveil && S.reveilCapteur && cap(S.reveilCapteur, 'alarm_motion') === true && !$('#sleep').hidden) wake(); }
 
+/* ---------- Plein écran (sans les barres du navigateur) ---------- */
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+const fsOk = () => Boolean(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+function paintFullBtn() {
+  const b = $('#btn-full');
+  if (!b) return;
+  b.hidden = !fsOk();
+  const on = Boolean(fsEl());
+  b.innerHTML = icon(on ? 'reduire' : 'pleinecran', 'line');
+  b.setAttribute('aria-label', on ? 'Quitter le plein écran' : 'Plein écran');
+}
+async function toggleFull() {
+  try {
+    if (fsEl()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      const d = document.documentElement;
+      await (d.requestFullscreen || d.webkitRequestFullscreen).call(d);
+    }
+  } catch { toast('Plein écran refusé par le navigateur'); }
+  paintFullBtn();
+}
+document.addEventListener('fullscreenchange', paintFullBtn);
+document.addEventListener('webkitfullscreenchange', paintFullBtn);
+
 /* ---------- Démarrage ---------- */
 $('#btn-settings').addEventListener('click', () => openSettings());
+$('#btn-full').addEventListener('click', toggleFull);
+paintFullBtn();
 tick(); setInterval(tick, 10e3);
 render();
 refresh().then(() => { refreshSlow(); refreshCurve(true); refreshCameras(true); });
