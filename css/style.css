@@ -447,3 +447,26 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .lampbtn { white-space: nowrap; }
 .lampbtn.on { background: var(--lamp-on); border-color: var(--lamp-on-line); color: var(--text); }
 .card.lamps { align-self: start; }
+
+/* Éclairage compact : zones côte à côte */
+.lzones { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 18px 20px; align-items: start; }
+@media (max-width: 1000px) { .lzones { grid-template-columns: 1fr; } }
+.lzone .zone-bar { padding: 8px 14px; margin-bottom: 10px; border-radius: 14px; }
+.lzone .zone-bar .zb-title b { font-size: 15px; }
+.lcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; align-items: start; }
+.card.lamps { padding: 12px 12px 8px; }
+.card.lamps .section-head { margin-bottom: 6px; }
+.card.lamps h2 { margin: 0; }
+.card.lamps .lampbtn { padding: 5px 10px; font-size: 12px; min-height: 0; }
+.lamp2 { padding: 7px 8px; border-radius: 12px; margin: 0 -4px; }
+.lamp2 + .lamp2 { margin-top: 2px; }
+.lamp2.on { background: var(--lamp-on); }
+.l2-row { display: flex; align-items: center; gap: 10px; }
+.l2-row .nm { flex: 1; min-width: 0; font-size: 14px; line-height: 1.25; }
+.l2-row .nm .small { font-size: 11px; }
+.lamp2 .switch { width: 46px; height: 28px; }
+.lamp2 .switch::after { width: 22px; height: 22px; }
+.lamp2 .switch.on::after { transform: translateX(18px); }
+.lamp2 .dim { width: 100%; margin: 6px 0 2px; display: block; }
+.lamp2.off-line .nm div:first-child { opacity: .55; }
+.lzone .zone-bar .btn { padding: 5px 12px; font-size: 12px; min-height: 0; }

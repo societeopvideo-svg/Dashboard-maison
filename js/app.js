@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119s';
-import { Homey, forecast, geocode } from './api.js?v=20261119s';
-import { icon, TABS } from './icons.js?v=20261119s';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119t';
+import { Homey, forecast, geocode } from './api.js?v=20261119t';
+import { icon, TABS } from './icons.js?v=20261119t';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -672,23 +672,25 @@ function viewLights() {
         const inj = lampOff(d);
         const on = lampOn(d);
         const dim = has(d.id, 'dim') ? pct(cap(d.id, 'dim') ?? 0) : null;
-        const sub = inj ? 'injoignable · coupée à l’interrupteur ?' : on && dim != null ? `${dim} %` : '';
-        return `<div class="dev lamp ${on ? 'on' : ''} ${inj ? 'off-line' : ''}"><div class="nm"><div>${esc(nm(d.id))}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>
-          ${dim != null && !inj ? `<input class="dim" type="range" min="1" max="100" value="${dim || 1}" data-range="dim" data-id="${d.id}" aria-label="Intensité" ${on ? '' : 'disabled style="opacity:.4"'}>` : ''}
-          <button class="switch ${on ? 'on' : ''}" data-act="onoff" data-id="${d.id}" aria-label="Allumer / éteindre" ${inj ? 'disabled' : ''}></button></div>`;
+        const sub = inj ? 'injoignable' : on && dim != null ? `${dim} %` : '';
+        // Compact : nom + interrupteur, le curseur d'intensité n'apparaît que lampe allumée
+        return `<div class="lamp2 ${on ? 'on' : ''} ${inj ? 'off-line' : ''}">
+          <div class="l2-row"><div class="nm"><div>${esc(nm(d.id))}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>
+          <button class="switch ${on ? 'on' : ''}" data-act="onoff" data-id="${d.id}" aria-label="Allumer / éteindre" ${inj ? 'disabled' : ''}></button></div>
+          ${dim != null && on ? `<input class="dim" type="range" min="1" max="100" value="${dim || 1}" data-range="dim" data-id="${d.id}" aria-label="Intensité">` : ''}</div>`;
       }).join('')}</div>`;
   };
   const ZONES = [['vie', 'Zone vie', 'z-vie'], ['nuit', 'Zone nuit', 'z-nuit'], ['autres', 'Extérieur et annexes', 'z-autres']];
-  return `<h1>Éclairage</h1>${ZONES.map(([k, titre, cls]) => {
+  return `<h1>Éclairage</h1><div class="lzones">${ZONES.map(([k, titre, cls]) => {
     const zids = Object.keys(pieces).filter((zid) => zoneDePiece(zid) === k)
       .sort((a, b) => (zoneName(a) || '').localeCompare(zoneName(b) || '', 'fr', { numeric: true }));
     if (!zids.length) return '';
     const all = zids.flatMap((zid) => pieces[zid]);
     const nbOn = all.filter(lampOn).length;
-    return `<div class="zone-bar ${cls}"><div class="zb-title"><b>${titre}</b><span>${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${all.length}` : 'tout est éteint'}</span></div>
+    return `<section class="lzone"><div class="zone-bar ${cls}"><div class="zb-title"><b>${titre}</b><span>${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${all.length}` : 'tout est éteint'}</span></div>
       ${nbOn ? `<button class="btn sm" data-act="zonelights" data-ids="${all.filter(lampOn).map((d) => d.id).join(',')}" data-v="off" style="margin-left:auto">Tout éteindre</button>` : ''}</div>
-      <div class="grid" style="margin-bottom:26px">${zids.map((zid) => card(zid, pieces[zid], cls)).join('')}</div>`;
-  }).join('')}`;
+      <div class="lcards">${zids.map((zid) => card(zid, pieces[zid], cls)).join('')}</div></section>`;
+  }).join('')}</div>`;
 }
 
 function viewPlugs() {
