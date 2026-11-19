@@ -395,3 +395,26 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 
 .wait { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .45; } }
+
+/* Courbe énergie en miroir */
+.chart-wrap { position: relative; }
+.chart svg { height: auto; }
+.axis-lbl { position: absolute; left: 6px; font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--surface) 80%, transparent); padding: 1px 6px; border-radius: 6px; pointer-events: none; }
+.axis-lbl .unit { font-size: inherit; }
+.axis-lbl.top { top: 2px; }
+.axis-lbl.bot { bottom: 2px; }
+
+/* Piles et batteries */
+:root { --b-green: #3FA66B; --b-orange: #E08A2E; --b-red: #D9534A; }
+.bats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 4px; }
+.bat { border-radius: 16px; padding: 12px 14px; background: color-mix(in srgb, var(--bc) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bc) 40%, transparent); }
+.bat.green { --bc: var(--b-green); }
+.bat.orange { --bc: var(--b-orange); }
+.bat.red { --bc: var(--b-red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--b-red) 45%, transparent); }
+.bat-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.bat-pct { font-size: 24px; font-weight: 650; color: var(--bc); font-variant-numeric: tabular-nums; }
+.bat-pct small { font-size: 13px; margin-left: 1px; }
+.bat-ico { position: relative; width: 30px; height: 15px; border: 2px solid var(--bc); border-radius: 4px; padding: 1px; }
+.bat-ico::after { content: ''; position: absolute; right: -5px; top: 3px; width: 3px; height: 6px; border-radius: 0 2px 2px 0; background: var(--bc); }
+.bat-ico i { display: block; height: 100%; border-radius: 1px; background: var(--bc); }
+.bat-nm { font-size: 14px; line-height: 1.25; }

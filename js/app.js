@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119o';
-import { Homey, forecast, geocode } from './api.js?v=20261119o';
-import { icon, TABS } from './icons.js?v=20261119o';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119p';
+import { Homey, forecast, geocode } from './api.js?v=20261119p';
+import { icon, TABS } from './icons.js?v=20261119p';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -109,11 +109,15 @@ async function refreshWeather(force = false) {
 async function refreshCurve(force = false) {
   if (!homey.ready || (!force && Date.now() - st.curveAt < 5 * 60e3)) return;
   st.curveAt = Date.now();
-  const [sol, achat] = await Promise.all([
-    homey.insights(C.energie.solaire, 'measure_power'),
-    homey.insights(C.energie.linky, 'measure_power'),
+  // Selon la version de Homey, la puissance est enregistrée sous measure_power ou energy_power
+  const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c); if (r && r.length) return r; } return null; };
+  const P = ['measure_power', 'energy_power'];
+  const [sol, achat, inj] = await Promise.all([
+    hist(C.energie.solaire, P),
+    hist(C.energie.linky, P),
+    hist(C.energie.linky, ['apparent_power_instant_inject_capability']),
   ]);
-  st.curve = sol && achat ? { sol, achat } : null;
+  st.curve = sol && achat ? { sol, achat, inj: inj || [] } : null;
   maybeRender();
 }
 
@@ -125,7 +129,7 @@ function sample() {
   if (arr.length && now - arr[arr.length - 1].t < 60e3) return;
   const e = energyNow();
   if (e.prod == null && e.achat == null) return;
-  arr.push({ t: now, p: e.prod ?? 0, a: e.achat ?? 0 });
+  arr.push({ t: now, p: e.prod ?? 0, a: e.achat ?? 0, r: e.revente ?? 0 });
   store.set(key, arr.slice(-1500));
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
@@ -272,38 +276,45 @@ function cardComfort() {
 function curveSeries() {
   const day0 = new Date(); day0.setHours(0, 0, 0, 0);
   const k = 1 + S.coefFHE;
+  // Autoconsommation = production − ce qui part sur le réseau (injection Linky)
+  const auto = (prod, inj) => {
+    const near = (t) => { let best = null, d = 6 * 60e3; for (const p of inj) { const x = Math.abs(p.t - t); if (x < d) { d = x; best = p; } } return best ? best.v : 0; };
+    return prod.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(p.t)) }));
+  };
   if (st.curve) {
-    return {
-      day0,
-      prod: st.curve.sol.map((p) => ({ t: p.t, v: p.v * k })),
-      achat: st.curve.achat.map((p) => ({ t: p.t, v: p.v })),
-      src: 'Homey',
-    };
+    const prod = st.curve.sol.map((p) => ({ t: p.t, v: p.v * k }));
+    return { day0, prod, auto: auto(prod, st.curve.inj), achat: st.curve.achat.map((p) => ({ t: p.t, v: p.v })), src: 'Homey' };
   }
   const arr = store.get('samples.' + new Date().toISOString().slice(0, 10), []);
   if (arr.length < 3) return null;
-  return { day0, prod: arr.map((s) => ({ t: s.t, v: s.p })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
+  return { day0, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
 }
 
-function chartSVG(series, h = 120) {
+function chartSVG(series, h = 150) {
   if (!series) return '<p class="small muted">La courbe apparaîtra au fil de la journée.</p>';
+  // Achats au-dessus de l'axe, production et autoconsommation en dessous
   const W = 600, H = h, t0 = series.day0.getTime(), span = 864e5;
-  const all = [...series.prod, ...series.achat].map((p) => p.v);
-  const ymax = Math.max(500, ...all) * 1.08;
+  const topMax = Math.max(300, ...series.achat.map((p) => p.v)) * 1.08;
+  const botMax = Math.max(300, ...series.prod.map((p) => p.v)) * 1.08;
+  const axe = clamp((topMax / (topMax + botMax)) * H, H * 0.3, H * 0.7);
   const X = (t) => (((t - t0) / span) * W).toFixed(1);
-  const Y = (v) => (H - (clamp(v, 0, ymax) / ymax) * (H - 4)).toFixed(1);
-  const area = (pts) => (pts.length ? `M${X(pts[0].t)},${H} ` + pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ') + ` L${X(pts[pts.length - 1].t)},${H} Z` : '');
-  const line = (pts) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
+  const Yh = (v) => (axe - (clamp(v, 0, topMax) / topMax) * (axe - 2)).toFixed(1);
+  const Yb = (v) => (axe + (clamp(v, 0, botMax) / botMax) * (H - axe - 2)).toFixed(1);
+  const area = (pts, Y) => (pts.length ? `M${X(pts[0].t)},${axe} ` + pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ') + ` L${X(pts[pts.length - 1].t)},${axe} Z` : '');
+  const line = (pts, Y) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
   const now = X(Date.now());
   const hours = [6, 12, 18].map((hh) => `<line x1="${(hh / 24) * W}" x2="${(hh / 24) * W}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+  return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">
     ${hours}
-    <path d="${area(series.prod)}" fill="var(--sun)" fill-opacity=".28"/>
-    <path d="${line(series.prod)}" fill="none" stroke="var(--sun)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
-    <path d="${area(series.achat)}" fill="var(--grid)" fill-opacity=".35"/>
-    <path d="${line(series.achat)}" fill="none" stroke="var(--muted)" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
+    <path d="${area(series.achat, Yh)}" fill="var(--grid)" fill-opacity=".45"/>
+    <path d="${line(series.achat, Yh)}" fill="none" stroke="var(--muted)" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
+    <path d="${area(series.prod, Yb)}" fill="var(--sun)" fill-opacity=".22"/>
+    <path d="${area(series.auto || [], Yb)}" fill="var(--ok)" fill-opacity=".45"/>
+    <path d="${line(series.prod, Yb)}" fill="none" stroke="var(--sun)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+    <line x1="0" x2="${W}" y1="${axe.toFixed(1)}" y2="${axe.toFixed(1)}" stroke="var(--muted)" stroke-opacity=".5" vector-effect="non-scaling-stroke"/>
     <line x1="${now}" x2="${now}" y1="0" y2="${H}" stroke="var(--accent)" stroke-width="1" vector-effect="non-scaling-stroke"/>
-  </svg><div class="hours"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>`;
+  </svg><span class="axis-lbl top">Achat ${watts(topMax / 1.08)}</span><span class="axis-lbl bot">Production ${watts(botMax / 1.08)}</span></div>
+  <div class="hours"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>`;
 }
 
 function cardEnergy() {
@@ -317,7 +328,7 @@ function cardEnergy() {
       <div class="kpi"><div class="lbl">Coût du jour</div><div class="val">${nf(e.cout, 2)}<span class="unit">€</span></div><div class="small muted">abonnement compris</div></div>
     </div>
     <div class="chart">${chartSVG(curveSeries())}</div>
-    <div class="legend"><span><i style="background:var(--sun);opacity:.6"></i>Production solaire (FHE estimé)</span><span><i style="background:var(--grid)"></i>Achat au réseau</span><span>Sous la courbe solaire, sans achat : autoconsommation</span></div>
+    <div class="legend"><span><i style="background:var(--grid)"></i>Achat au réseau (en haut)</span><span><i style="background:var(--ok);opacity:.7"></i>Autoconsommation</span><span><i style="background:var(--sun);opacity:.45"></i>Production revendue</span><span>Production : Hoymiles + FHE estimé</span></div>
   </div>`;
 }
 
@@ -565,6 +576,25 @@ function viewHeat() {
     <div class="grid">${cards}</div>`;
 }
 
+/* Piles et batteries : vert au-dessus de 15 %, orange de 6 à 15 %, rouge à 5 % et moins */
+function cardBatteries() {
+  const list = visible()
+    .filter((d) => typeof d.capabilitiesObj?.measure_battery?.value === 'number')
+    .map((d) => ({ d, b: Math.round(d.capabilitiesObj.measure_battery.value) }))
+    .sort((x, y) => x.b - y.b);
+  if (!list.length) return '';
+  const niv = (b) => (b <= 5 ? 'red' : b <= 15 ? 'orange' : 'green');
+  const nb = { red: 0, orange: 0 };
+  list.forEach(({ b }) => { const n = niv(b); if (n in nb) nb[n]++; });
+  const resume = nb.red ? `<span class="tag alert">${nb.red} à changer</span>` : nb.orange ? `<span class="tag warn">${nb.orange} à prévoir</span>` : '<span class="tag">Tout va bien</span>';
+  return `<div class="card span-2"><div class="section-head"><h2>Piles et batteries</h2>${resume}</div>
+    <div class="bats">${list.map(({ d, b }) => `<div class="bat ${niv(b)}">
+      <div class="bat-top"><span class="bat-pct">${b}<small>%</small></span><span class="bat-ico"><i style="width:${clamp(b, 3, 100)}%"></i></span></div>
+      <div class="bat-nm">${esc(nm(d.id))}</div><div class="small muted">${esc(zoneName(d.zone))}</div></div>`).join('')}</div>
+    <div class="legend"><span><i style="background:var(--b-green)"></i>plus de 15 %</span><span><i style="background:var(--b-orange)"></i>6 à 15 %</span><span><i style="background:var(--b-red)"></i>5 % et moins</span></div>
+  </div>`;
+}
+
 /* Énergie détaillée */
 function viewEnergy() {
   const e = energyNow();
@@ -598,6 +628,7 @@ function viewEnergy() {
       <div class="row between"><span class="muted">Revendu (compteur)</span><b>${nf(cap(C.energie.linky, 'meter_power.exported'), 0)} kWh</b></div>
     </div></div>
     <div class="card"><h2>Qui consomme en ce moment</h2>${conso.length ? conso.map((d) => `<div class="dev"><div class="nm"><div>${esc(nm(d.id))}</div><div class="small muted">${esc(zoneName(d.zone))}</div></div><b>${nf(d.capabilitiesObj.measure_power.value, 0)} W</b></div>`).join('') : '<p class="muted">Rien de notable.</p>'}</div>
+    ${cardBatteries()}
     <div class="card"><h2>Tarif utilisé</h2><p class="small muted" style="margin:0">${nf(S.prixKwh, 4)} €/kWh · abonnement ${nf(S.aboMois, 2)} €/mois · FHE = Hoymiles × ${nf(S.coefFHE, 2)}. Modifiable dans les réglages.</p></div>
   </div>`;
 }
