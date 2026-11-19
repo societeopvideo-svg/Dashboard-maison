@@ -55,6 +55,8 @@ export const CONFIG = {
     capteur: 'b82d4c9b-5dac-41b2-8a4e-96ead6ef776f',
   },
 
+  cameras: ['35f40034-1f6f-4207-8ff3-34795a6d32c9', '4277c191-56ec-4cfc-8c0f-89651aeac469'],
+
   presence: ['ebd39cb0-9b89-4547-af1d-b88cf2eb6b57', 'fce26290-c84d-4a79-b949-1cd30ea3dd3e'],
 
   alertes: {

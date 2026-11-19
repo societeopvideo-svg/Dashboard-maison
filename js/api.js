@@ -44,6 +44,15 @@ export class Homey {
     });
   }
 
+  // Image d'une caméra (snapshot) : l'adresse demande la clé, donc on passe par un blob.
+  async imageURL(path) {
+    const res = await fetch(`${this.url}${path.startsWith('/api') ? '' : '/api'}${path}`, {
+      headers: { Authorization: `Bearer ${this.key}` },
+    });
+    if (!res.ok) throw new Error(`image ${res.status}`);
+    return URL.createObjectURL(await res.blob());
+  }
+
   triggerFlow(flowId) {
     return this.req(`/manager/flow/advancedflow/${flowId}/trigger`, { method: 'POST', body: {} });
   }
