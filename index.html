@@ -12,7 +12,7 @@
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=20261119c">
 <title>Maison</title>
 </head>
 <body>
@@ -28,6 +28,11 @@
 <div id="sheet-root"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="sleep" hidden></div>
-<script type="module" src="js/app.js"></script>
+<script>
+  // Affiche les erreurs à l'écran plutôt qu'une page vide
+  function showErr(m) { var v = document.getElementById('view'); if (v) v.innerHTML = '<div class="empty">Erreur du dashboard : ' + String(m).replace(/</g, '&lt;') + '<br>Recharge la page (Cmd + Maj + R). Si ça persiste, envoie ce message.</div>'; }
+  window.addEventListener('error', function (e) { showErr(e.message); });
+</script>
+<script type="module" src="js/app.js?v=20261119c"></script>
 </body>
 </html>

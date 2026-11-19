@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js';
-import { Homey, forecast, geocode } from './api.js';
-import { icon, TABS } from './icons.js';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119c';
+import { Homey, forecast, geocode } from './api.js?v=20261119c';
+import { icon, TABS } from './icons.js?v=20261119c';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -20,6 +20,7 @@ const st = {
   lastReq: store.get('lastReq', {}), garageSince: store.get('garageSince', null),
 };
 let homey = new Homey(S.homeyUrl, S.cle);
+const CAMS = C.cameras || C.alertes?.cameras || [];
 
 /* ---------- Outils ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -205,7 +206,8 @@ function render() {
     return;
   }
   const views = { accueil: viewHome, volets: viewBlinds, chauffage: viewHeat, energie: viewEnergy, eclairage: viewLights, prises: viewPlugs };
-  v.innerHTML = (views[st.tab] || viewHome)();
+  try { v.innerHTML = (views[st.tab] || viewHome)(); }
+  catch (e) { v.innerHTML = `<div class="empty">Erreur d’affichage : ${esc(e.message)}<br>Recharge la page (Cmd + Maj + R). Si ça persiste, envoie ce message.</div>`; console.error(e); return; }
   const fire = alerts().find((a) => a.fire);
   let f = $('#fire');
   if (fire && !f) { f = document.createElement('div'); f.id = 'fire'; f.className = 'fire'; document.body.appendChild(f); }
@@ -356,7 +358,7 @@ function camImagePath(id) {
 }
 async function refreshCameras(force = false) {
   if (!homey.ready) return;
-  await Promise.all(C.cameras.map(async (id) => {
+  await Promise.all(CAMS.map(async (id) => {
     const p = camImagePath(id);
     const cur = camImg[id];
     if (!p) { camImg[id] = { err: 'none' }; return; }
@@ -372,7 +374,7 @@ async function refreshCameras(force = false) {
 const hhmm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
 function cardCameras() {
-  const tiles = C.cameras.filter((id) => dev(id)).map((id) => {
+  const tiles = CAMS.filter((id) => dev(id)).map((id) => {
     const im = camImg[id] || {};
     const motion = cap(id, 'alarm_motion') === true;
     const bat = cap(id, 'measure_battery');
@@ -569,7 +571,7 @@ function openSheet(html, onMount) {
   root.firstChild.addEventListener('click', (e) => { if (e.target === root.firstChild) closeSheet(); });
   onMount?.(root.querySelector('.sheet'));
 }
-function closeSheet() { $('#sheet-root').innerHTML = ''; st.sheet = false; render(); }
+function closeSheet() { stopLive(); $('#sheet-root').innerHTML = ''; st.sheet = false; render(); }
 
 function confirmSheet(title, text, ok = 'Confirmer') {
   return new Promise((resolve) => {
@@ -584,6 +586,97 @@ function confirmSheet(title, text, ok = 'Confirmer') {
     });
     const bg = $('#sheet-root .sheet-bg');
     bg.addEventListener('click', (e) => { if (e.target === bg) resolve(false); });
+  });
+}
+
+/* ---------- Caméras : vidéo en direct ----------
+   Même échange que l'app web Homey : offre WebRTC envoyée à /manager/videos/video/:id/offer,
+   réponse SDP renvoyée par la Homey, puis maintien du flux toutes les 60 s. */
+function videoOf(devId) {
+  const v = (dev(devId)?.videos || []).find((x) => x.type === 'camera' && x.videoObj?.id);
+  return v ? v.videoObj : null;
+}
+
+let live = null; // { pc, keep, closed }
+function stopLive() {
+  if (!live) return;
+  live.closed = true;
+  clearInterval(live.keep);
+  try { live.pc.close(); } catch { /* déjà fermée */ }
+  live = null;
+}
+
+async function startLive(videoObj, videoEl, setMsg) {
+  stopLive();
+  const me = { closed: false };
+  live = me;
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }], bundlePolicy: 'max-compat', iceCandidatePoolSize: 10 });
+  me.pc = pc;
+  pc.addTransceiver('audio', { direction: 'recvonly' });
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  if (videoObj.options?.dataChannel !== false) pc.createDataChannel('data');
+  const stream = new MediaStream();
+  pc.ontrack = (e) => {
+    if (me.closed || !e.track) return;
+    stream.addTrack(e.track);
+    if (stream.getVideoTracks().length) { videoEl.srcObject = stream; videoEl.play().catch(() => {}); setMsg(''); }
+  };
+  pc.onconnectionstatechange = () => { if (!me.closed && pc.connectionState === 'failed') setMsg('Connexion vidéo perdue.', true); };
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise((ok) => {
+    if (pc.iceGatheringState === 'complete') return ok();
+    const t = setTimeout(ok, 2500);
+    pc.addEventListener('icecandidate', (e) => { if (!e.candidate) { clearTimeout(t); ok(); } });
+  });
+  if (me.closed) return;
+  const r = await homey.req(`/manager/videos/video/${videoObj.id}/offer`, { method: 'POST', body: { offer: pc.localDescription.sdp }, timeout: 30000 });
+  if (me.closed) return;
+  if (!r || typeof r.answerSdp !== 'string') throw new Error('réponse vidéo invalide');
+  await pc.setRemoteDescription({ type: 'answer', sdp: r.answerSdp.replace(/a=sendrecv/g, 'a=sendonly') });
+  if (r.streamId) {
+    me.keep = setInterval(() => homey.req(`/manager/videos/video/${videoObj.id}/keep-alive`, { method: 'POST', body: { streamId: r.streamId } }).catch(() => {}), 60e3);
+  }
+}
+
+function openLive(id) {
+  const im = camImg[id] || {};
+  const vo = videoOf(id);
+  openSheet(`<div class="row between"><h3>${esc(nm(id))}</h3><div class="row"><button class="btn sm ghost" data-x="sound" ${vo ? '' : 'hidden'}>Son</button><button class="btn sm ghost" data-x="close">Fermer</button></div></div>
+    <div class="live">
+      ${im.url ? `<img class="live-poster" src="${im.url}" alt="">` : ''}
+      <video class="live-video" autoplay playsinline muted></video>
+      <div class="live-msg" data-msg>${vo ? 'Connexion au direct…' : 'Cette caméra ne propose pas de vidéo en direct dans Homey.'}</div>
+      ${vo ? '<span class="live-badge">EN DIRECT</span>' : ''}
+    </div>
+    <p class="small" data-note>${vo ? 'Le direct passe par la Homey. Avec Arlo, la première tentative échoue parfois : le dashboard réessaie tout seul.' : (im.at ? 'Dernière image : ' + hhmm(im.at) + '.' : '')}</p>`, async (el) => {
+    const video = el.querySelector('video');
+    const msg = el.querySelector('[data-msg]');
+    const setMsg = (t, err) => { msg.textContent = t; msg.hidden = !t; msg.classList.toggle('err', !!err); if (!t) el.querySelector('.live').classList.add('playing'); };
+    const close = () => { stopLive(); closeSheet(); };
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-x]');
+      if (!b) return;
+      e.stopPropagation();
+      if (b.dataset.x === 'close') close();
+      if (b.dataset.x === 'sound') { video.muted = !video.muted; b.textContent = video.muted ? 'Son' : 'Couper le son'; video.play().catch(() => {}); }
+    });
+    $('#sheet-root .sheet-bg').addEventListener('click', (e) => { if (e.target.classList.contains('sheet-bg')) stopLive(); });
+    if (!vo) return;
+    for (let essai = 1; essai <= 2; essai++) {
+      try {
+        await startLive(vo, video, setMsg);
+        // si aucune image n'arrive en 12 s, on retente une fois
+        const ok = await new Promise((res) => { const t0 = Date.now(); const iv = setInterval(() => { if (!live) { clearInterval(iv); res(true); } else if (video.srcObject) { clearInterval(iv); res(true); } else if (Date.now() - t0 > 12000) { clearInterval(iv); res(false); } }, 300); });
+        if (ok || !live) return;
+        if (essai === 1) setMsg('La caméra se réveille, nouvel essai…');
+      } catch (err) {
+        if (!live && !st.sheet) return;
+        if (essai === 1) { setMsg('La caméra se réveille, nouvel essai…'); continue; }
+        setMsg(err.status === 403 ? 'La clé API n’a pas accès à la vidéo.' : 'Direct indisponible pour le moment. Réessaie dans un instant ou ouvre l’app Arlo.', true);
+        return;
+      }
+    }
+    if (live && !video.srcObject) { stopLive(); setMsg('Direct indisponible pour le moment. Réessaie dans un instant ou ouvre l’app Arlo.', true); }
   });
 }
 
@@ -622,15 +715,7 @@ const actions = {
   zpower({ id }) { send(id, 'onoff', cap(id, 'onoff') === false).catch(() => {}); },
   onoff({ id }) { send(id, 'onoff', !cap(id, 'onoff')).catch(() => {}); },
   zoneoff({ ids }) { ids.split(',').forEach((id) => { if (cap(id, 'onoff')) send(id, 'onoff', false).catch(() => {}); }); },
-  async cam({ id }) {
-    await refreshCameras(true);
-    const im = camImg[id] || {};
-    openSheet(`<div class="row between"><h3>${esc(nm(id))}</h3><button class="btn sm ghost" data-x="close">Fermer</button></div>
-      ${im.url ? `<img class="cam-big" src="${im.url}" alt="">` : '<p>Pas d’image disponible pour cette caméra.</p>'}
-      <p class="small">${im.at ? 'Image de ' + hhmm(im.at) + '. ' : ''}Homey reçoit une image fixe, pas la vidéo en direct : pour le direct, ouvre l’app Arlo.</p>`, (el) => {
-      el.addEventListener('click', (e) => { if (e.target.closest('[data-x="close"]')) { e.stopPropagation(); closeSheet(); } });
-    });
-  },
+  cam({ id }) { openLive(id); },
   async plug({ id }) {
     const on = cap(id, 'onoff') === true;
     if (on && C.prisesProtegees.includes(id)) {
