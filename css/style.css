@@ -553,3 +553,15 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .cgrid > .c-full .lzones { margin-top: 2px; }
 .ct-foot { flex-wrap: nowrap; font-size: 11.5px; } .ct-foot > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .axis-lbl.right { left: auto; right: 6px; }
+
+/* Tuiles de consommation colorées selon la puissance en cours */
+.ctile.c-faible { --cc: var(--b-green); }
+.ctile.c-moyen { --cc: var(--b-orange); }
+.ctile.c-eleve { --cc: var(--b-red); }
+.lzone .ctile.c-faible, .lzone .ctile.c-moyen, .lzone .ctile.c-eleve {
+  background: color-mix(in srgb, var(--cc) 14%, var(--surface));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--cc) 55%, transparent);
+}
+.ctile.c-faible .ct-w, .ctile.c-moyen .ct-w, .ctile.c-eleve .ct-w { color: var(--cc); }
+.ctile.c-faible .cline path:last-of-type, .ctile.c-moyen .cline path:last-of-type, .ctile.c-eleve .cline path:last-of-type { stroke: var(--cc); }
+.ctile.c-faible .cline path:first-of-type, .ctile.c-moyen .cline path:first-of-type, .ctile.c-eleve .cline path:first-of-type { fill: var(--cc); }

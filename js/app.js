@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zh';
-import { Homey, forecast, geocode } from './api.js?v=20261119zh';
-import { icon, TABS } from './icons.js?v=20261119zh';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zi';
+import { Homey, forecast, geocode } from './api.js?v=20261119zi';
+import { icon, TABS } from './icons.js?v=20261119zi';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -916,7 +916,10 @@ function tuileAppareil(x, cls) {
   const r = calculPeriode(x.id, vue);
   const seg = [['direct', 'Direct'], ['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => `<button class="${vue === v ? 'on' : ''}" data-act="ctvue" data-id="${x.id}" data-v="${v}">${l}</button>`).join('');
   const periode = { direct: '1 h', jour: 'jour', mois: 'mois', annee: 'année' }[vue];
-  return `<div class="card ctile ${cls} ${x.w >= 1 ? 'on' : ''}">
+  // Couleur selon la consommation en cours : vert faible, orange moyenne, rouge élevée
+  const [s1, s2] = C.seuilsConso || [150, 800];
+  const niveau = x.w < 1 ? '' : x.w < s1 ? 'c-faible' : x.w < s2 ? 'c-moyen' : 'c-eleve';
+  return `<div class="card ctile ${cls} ${niveau}">
     <div class="ct-head"><div class="ct-nm"><b>${esc(x.nom)}</b><small>${esc(x.piece || '')}</small></div><span class="ct-w">${watts(x.w)}</span></div>
     <div class="seg ct-seg">${seg}</div>
     ${r.pts === null ? '<p class="small muted ct-wait">Chargement…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84, now: vue === 'direct' })}
