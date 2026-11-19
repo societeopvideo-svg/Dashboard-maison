@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119k';
-import { Homey, forecast, geocode } from './api.js?v=20261119k';
-import { icon, TABS } from './icons.js?v=20261119k';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119l';
+import { Homey, forecast, geocode } from './api.js?v=20261119l';
+import { icon, TABS } from './icons.js?v=20261119l';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -430,19 +430,19 @@ function capTime(id, c) {
   return Number.isNaN(t) ? 0 : t;
 }
 function blindInfo(id) {
+  // Comme l'app Homey : la position (0 = fermé, 1 = ouvert) fait foi dès qu'elle existe.
+  // L'état (monter / stop / descendre) ne sert que si l'appareil n'a pas de position.
   const state = cap(id, 'windowcoverings_state');
   const set = cap(id, 'windowcoverings_set');
-  const tS = capTime(id, 'windowcoverings_state');
-  const tP = capTime(id, 'windowcoverings_set');
   const req = st.lastReq[id];
   const tR = req && typeof req === 'object' ? req.t : 0;
+  const tP = Math.max(capTime(id, 'windowcoverings_set'), capTime(id, 'windowcoverings_state'));
   let p = null, label = null;
-  if (tR && tR >= tS && tR >= tP) p = req.v;
-  else if (typeof set === 'number' && tP > tS) p = pct(set);
+  if (tR && tR > tP) p = req.v;                       // commande envoyée à l'instant depuis le dashboard
+  else if (typeof set === 'number') p = pct(set);
   else if (state === 'up') p = 100;
   else if (state === 'down') p = 0;
-  else if (state === 'idle') { p = typeof set === 'number' ? pct(set) : null; label = 'Arrêté'; }
-  else if (typeof set === 'number') p = pct(set);
+  else if (state === 'idle') label = 'Arrêté';
   if (!label) label = p == null ? '–' : p >= 95 ? 'Ouvert' : p <= 5 ? 'Fermé' : `Ouvert à ${p} %`;
   return { p, open: p == null ? null : p > 5, label };
 }
