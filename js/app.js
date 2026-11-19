@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119r';
-import { Homey, forecast, geocode } from './api.js?v=20261119r';
-import { icon, TABS } from './icons.js?v=20261119r';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119s';
+import { Homey, forecast, geocode } from './api.js?v=20261119s';
+import { icon, TABS } from './icons.js?v=20261119s';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -649,20 +649,25 @@ function byZone(list) {
 // Une lampe Hue coupée à l'interrupteur devient injoignable mais garde « allumée » dans la Homey
 const lampOff = (d) => d.available === false;
 const lampOn = (d) => !lampOff(d) && cap(d.id, 'onoff') === true;
-const ORDRE_PIECES = ['Chambre 1', 'Salon'];
+// Pièce → zone vie / nuit : déduit des volets, plus les pièces sans volet (config.piecesZone)
+function zoneDePiece(zoneId) {
+  for (const k of ['vie', 'nuit']) {
+    if ((C.piecesZone?.[k] || []).includes(zoneId)) return k;
+    if (C.volets[k].items.some((id) => st.devices[id]?.zone === zoneId)) return k;
+  }
+  return 'autres';
+}
 
 function viewLights() {
   const lights = visible().filter((d) => d.class === 'light' && has(d.id, 'onoff'));
   if (!lights.length) return '<h1>Éclairage</h1><div class="empty">Aucun éclairage trouvé.</div>';
-  const rang = (z) => { const i = ORDRE_PIECES.findIndex((n) => n.toLowerCase() === z.trim().toLowerCase()); return i < 0 ? 99 : i; };
-  const zones = byZone(lights).sort((a, b) => rang(a[0]) - rang(b[0]) || a[0].localeCompare(b[0], 'fr'));
-  return `<h1>Éclairage</h1><div class="grid">${zones.map(([z, list]) => {
-    const joignables = list.filter((d) => !lampOff(d));
+  const pieces = {};
+  lights.forEach((d) => { (pieces[d.zone] = pieces[d.zone] || []).push(d); });
+  const card = (zid, list, cls) => {
+    const ids = list.filter((d) => !lampOff(d)).map((d) => d.id).join(',');
     const nbOn = list.filter(lampOn).length;
-    const ids = joignables.map((d) => d.id).join(',');
-    const grp = list.length > 1 ? `<div class="lamp-grp ${nbOn ? 'on' : ''}"><div class="nm"><div>Toute la pièce</div><div class="small muted">${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${list.length}` : 'tout est éteint'}</div></div>
-      <button class="switch ${nbOn ? 'on' : ''}" data-act="zonelights" data-ids="${ids}" data-v="${nbOn ? 'off' : 'on'}" aria-label="Allumer / éteindre toute la pièce" ${ids ? '' : 'disabled'}></button></div>` : '';
-    return `<div class="card"><h2>${esc(z)}</h2>${grp}
+    const btn = list.length > 1 ? `<button class="btn sm lampbtn ${nbOn ? 'on' : ''}" data-act="zonelights" data-ids="${ids}" data-v="${nbOn ? 'off' : 'on'}" ${ids ? '' : 'disabled'}>${nbOn ? 'Tout éteindre' : 'Tout allumer'}</button>` : '';
+    return `<div class="card lamps ${cls}"><div class="section-head"><h2>${esc(zoneName(zid) || 'Maison')}</h2>${btn}</div>
       ${list.map((d) => {
         const inj = lampOff(d);
         const on = lampOn(d);
@@ -672,7 +677,18 @@ function viewLights() {
           ${dim != null && !inj ? `<input class="dim" type="range" min="1" max="100" value="${dim || 1}" data-range="dim" data-id="${d.id}" aria-label="Intensité" ${on ? '' : 'disabled style="opacity:.4"'}>` : ''}
           <button class="switch ${on ? 'on' : ''}" data-act="onoff" data-id="${d.id}" aria-label="Allumer / éteindre" ${inj ? 'disabled' : ''}></button></div>`;
       }).join('')}</div>`;
-  }).join('')}</div>`;
+  };
+  const ZONES = [['vie', 'Zone vie', 'z-vie'], ['nuit', 'Zone nuit', 'z-nuit'], ['autres', 'Extérieur et annexes', 'z-autres']];
+  return `<h1>Éclairage</h1>${ZONES.map(([k, titre, cls]) => {
+    const zids = Object.keys(pieces).filter((zid) => zoneDePiece(zid) === k)
+      .sort((a, b) => (zoneName(a) || '').localeCompare(zoneName(b) || '', 'fr', { numeric: true }));
+    if (!zids.length) return '';
+    const all = zids.flatMap((zid) => pieces[zid]);
+    const nbOn = all.filter(lampOn).length;
+    return `<div class="zone-bar ${cls}"><div class="zb-title"><b>${titre}</b><span>${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${all.length}` : 'tout est éteint'}</span></div>
+      ${nbOn ? `<button class="btn sm" data-act="zonelights" data-ids="${all.filter(lampOn).map((d) => d.id).join(',')}" data-v="off" style="margin-left:auto">Tout éteindre</button>` : ''}</div>
+      <div class="grid" style="margin-bottom:26px">${zids.map((zid) => card(zid, pieces[zid], cls)).join('')}</div>`;
+  }).join('')}`;
 }
 
 function viewPlugs() {

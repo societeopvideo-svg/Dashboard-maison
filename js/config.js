@@ -56,6 +56,12 @@ export const CONFIG = {
     },
   },
 
+  // Pièces sans volet rattachées à une zone (les autres sont déduites des volets)
+  piecesZone: {
+    vie: ['140895f0-1a40-4e01-9f42-b1c54bf7b27a'], // Entrée
+    nuit: ['e95ba9f5-ec5b-4692-9c39-429f818a6f04'], // Salle de bain
+  },
+
   portail: {
     relais: 'a564e932-4fae-4651-8681-0d397f721ddd', // impulsion : on, 1 s, off (comme le flow)
     capteur: 'b82d4c9b-5dac-41b2-8a4e-96ead6ef776f',

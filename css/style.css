@@ -436,3 +436,14 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .lamp-grp .nm div:first-child { font-weight: 600; }
 .dev.lamp .nm div:first-child { white-space: normal; overflow: visible; line-height: 1.25; }
 .dev.lamp .dim { width: 104px; flex: none; }
+
+/* Éclairage par zone */
+:root { --z-autres: #ECE6DC; --z-autres-ink: #6E6253; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --z-autres: rgba(220, 200, 170, .10); --z-autres-ink: #D6C6AE; } }
+.zone-bar.z-autres { background: var(--z-autres); color: var(--z-autres-ink); }
+.card.lamps.z-vie { box-shadow: var(--shadow), inset 4px 0 0 var(--z-vie-ink); }
+.card.lamps.z-nuit { box-shadow: var(--shadow), inset 4px 0 0 var(--z-nuit-ink); }
+.card.lamps.z-autres { box-shadow: var(--shadow), inset 4px 0 0 var(--z-autres-ink); }
+.lampbtn { white-space: nowrap; }
+.lampbtn.on { background: var(--lamp-on); border-color: var(--lamp-on-line); color: var(--text); }
+.card.lamps { align-self: start; }
