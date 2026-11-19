@@ -24,6 +24,7 @@ export class Homey {
       if (!res.ok) {
         const err = new Error(`Homey ${res.status}`);
         err.status = res.status;
+        try { const t = await res.text(); try { const j = JSON.parse(t); err.detail = j.error || j.message || t; } catch { err.detail = t; } } catch { /* sans détail */ }
         throw err;
       }
       const text = await res.text();

@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119u';
-import { Homey, forecast, geocode } from './api.js?v=20261119u';
-import { icon, TABS } from './icons.js?v=20261119u';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119v';
+import { Homey, forecast, geocode } from './api.js?v=20261119v';
+import { icon, TABS } from './icons.js?v=20261119v';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -55,12 +55,32 @@ async function send(id, c, v, { optimistic = true } = {}) {
   if (optimistic) { setLocal(id, c, v); render(); }
   try {
     await homey.setCapability(id, c, v);
+    if (injoignables[id]) { delete injoignables[id]; store.set('injoignables', injoignables); }
   } catch (e) {
+    // Lampe sans courant (coupée à l'interrupteur) : la Homey répond mais l'appareil ne répond pas
+    const absent = e.status !== 403 && /atteint|joignable|reach|respond|offline|timeout/i.test(String(e.detail || ''));
+    if (absent) {
+      injoignables[id] = Date.now(); store.set('injoignables', injoignables);
+      render();
+      toast(`${nm(id)} ne répond pas : sans doute coupée à l’interrupteur`);
+      throw e;
+    }
     setLocal(id, c, before);
     render();
     toast(e.status === 403 ? 'La clé n’a pas le droit de commander cet appareil' : 'Commande non envoyée, Homey injoignable');
     throw e;
   }
+}
+
+// Appareils qui n'ont pas répondu à la dernière commande (gardé sur l'iPad).
+// Ils redeviennent normaux dès que la Homey reçoit un nouvel état de leur part.
+const injoignables = store.get('injoignables', {});
+function estInjoignable(d) {
+  const t = injoignables[d.id];
+  if (!t) return false;
+  const maj = Date.parse(d.capabilitiesObj?.onoff?.lastUpdated || '');
+  if (maj && maj > t + 5000) { delete injoignables[d.id]; store.set('injoignables', injoignables); return false; }
+  return true;
 }
 
 /* ---------- Horloge ---------- */
@@ -647,7 +667,7 @@ function byZone(list) {
 }
 
 // Une lampe Hue coupée à l'interrupteur devient injoignable mais garde « allumée » dans la Homey
-const lampOff = (d) => d.available === false;
+const lampOff = (d) => d.available === false || estInjoignable(d);
 const lampOn = (d) => !lampOff(d) && cap(d.id, 'onoff') === true;
 // Pièce → zone vie / nuit : déduit des volets, plus les pièces sans volet (config.piecesZone)
 function zoneDePiece(zoneId) {
@@ -672,11 +692,11 @@ function viewLights() {
         const inj = lampOff(d);
         const on = lampOn(d);
         const dim = has(d.id, 'dim') ? pct(cap(d.id, 'dim') ?? 0) : null;
-        const sub = inj ? 'injoignable' : on && dim != null ? `${dim} %` : '';
+        const sub = inj ? 'éteinte · coupée à l’interrupteur' : on && dim != null ? `${dim} %` : '';
         // Compact : nom + interrupteur, le curseur d'intensité n'apparaît que lampe allumée
         return `<div class="lamp2 ${on ? 'on' : ''} ${inj ? 'off-line' : ''}">
           <div class="l2-row"><div class="nm"><div>${esc(nm(d.id))}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>
-          <button class="switch ${on ? 'on' : ''}" data-act="onoff" data-id="${d.id}" aria-label="Allumer / éteindre" ${inj ? 'disabled' : ''}></button></div>
+          <button class="switch ${on ? 'on' : ''}" data-act="onoff" data-id="${d.id}" aria-label="Allumer / éteindre"></button></div>
           ${dim != null && on ? `<input class="dim" type="range" min="1" max="100" value="${dim || 1}" data-range="dim" data-id="${d.id}" aria-label="Intensité">` : ''}</div>`;
       }).join('')}</div>`;
   };
@@ -905,7 +925,8 @@ const actions = {
     }, 900);
   },
   zpower({ id }) { send(id, 'onoff', cap(id, 'onoff') === false).catch(() => {}); },
-  onoff({ id }) { send(id, 'onoff', !cap(id, 'onoff')).catch(() => {}); },
+  // Une lampe marquée injoignable s'affiche éteinte : un appui essaie donc de l'allumer
+  onoff({ id }) { const d = dev(id); const v = d && d.class === 'light' ? !lampOn(d) : !cap(id, 'onoff'); send(id, 'onoff', v).catch(() => {}); },
   zonelights({ ids, v }) { const on = v === 'on'; ids.split(',').filter(Boolean).forEach((id) => { if (cap(id, 'onoff') !== on) send(id, 'onoff', on).catch(() => {}); }); },
   zoneoff({ ids }) { ids.split(',').forEach((id) => { if (cap(id, 'onoff')) send(id, 'onoff', false).catch(() => {}); }); },
   cam({ id }) { openLive(id); },
