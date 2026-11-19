@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119h';
-import { Homey, forecast, geocode } from './api.js?v=20261119h';
-import { icon, TABS } from './icons.js?v=20261119h';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119i';
+import { Homey, forecast, geocode } from './api.js?v=20261119i';
+import { icon, TABS } from './icons.js?v=20261119i';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';

@@ -345,3 +345,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .chip.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .chip.on > button:first-child { color: var(--accent); font-weight: 600; }
 .wx-place { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text); }
+
+/* Plein écran : Safari affiche sa propre croix en haut à gauche (impossible à masquer).
+   On décale l'heure pour qu'elle ne soit pas cachée. */
+:fullscreen .top { padding-left: 88px; }
+:-webkit-full-screen .top { padding-left: 88px; }
