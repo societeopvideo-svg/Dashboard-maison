@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119p';
-import { Homey, forecast, geocode } from './api.js?v=20261119p';
-import { icon, TABS } from './icons.js?v=20261119p';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119q';
+import { Homey, forecast, geocode } from './api.js?v=20261119q';
+import { icon, TABS } from './icons.js?v=20261119q';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -162,7 +162,10 @@ function energyNow() {
   const cout = kwhJour == null ? null : kwhJour * S.prixKwh + aboJour;
   const auto = prod && prod > 50 ? clamp((prod - revente) / prod, 0, 1) : null;
   const prodJour = cap(C.energie.solaire, 'meter_power.today');
-  return { hoy, fhe, prod, achat, revente, kwhJour, aboJour, cout, auto, prodJourKwh: prodJour == null ? null : prodJour * (1 + S.coefFHE) };
+  // Part de la consommation de la maison couverte par le solaire (100 % = aucun achat)
+  const conso = prod == null || achat == null ? null : Math.max(0, prod - revente) + achat;
+  const couv = conso && conso > 50 ? clamp(Math.max(0, prod - revente) / conso, 0, 1) : null;
+  return { hoy, fhe, prod, achat, revente, couv, conso, kwhJour, aboJour, cout, auto, prodJourKwh: prodJour == null ? null : prodJour * (1 + S.coefFHE) };
 }
 
 /* ---------- Alertes ---------- */
@@ -277,13 +280,17 @@ function curveSeries() {
   const day0 = new Date(); day0.setHours(0, 0, 0, 0);
   const k = 1 + S.coefFHE;
   // Autoconsommation = production − ce qui part sur le réseau (injection Linky)
-  const auto = (prod, inj) => {
-    const near = (t) => { let best = null, d = 6 * 60e3; for (const p of inj) { const x = Math.abs(p.t - t); if (x < d) { d = x; best = p; } } return best ? best.v : 0; };
-    return prod.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(p.t)) }));
-  };
+  const near = (arr, t) => { let best = null, d = 6 * 60e3; for (const p of arr) { const x = Math.abs(p.t - t); if (x < d) { d = x; best = p; } } return best ? best.v : 0; };
   if (st.curve) {
+    // L'historique Homey fait des moyennes sur 5 min : quand un nuage passe, le même créneau
+    // contient un peu d'achat ET un peu d'injection. Le compteur ne peut pas faire les deux
+    // à la fois : on garde seulement le solde du créneau.
+    const inj = st.curve.inj;
+    const achat = st.curve.achat.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(inj, p.t)) }));
+    const injNet = st.curve.achat.length ? inj.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(st.curve.achat, p.t)) })) : inj;
     const prod = st.curve.sol.map((p) => ({ t: p.t, v: p.v * k }));
-    return { day0, prod, auto: auto(prod, st.curve.inj), achat: st.curve.achat.map((p) => ({ t: p.t, v: p.v })), src: 'Homey' };
+    const auto = prod.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(injNet, p.t)) }));
+    return { day0, prod, auto, achat, src: 'Homey' };
   }
   const arr = store.get('samples.' + new Date().toISOString().slice(0, 10), []);
   if (arr.length < 3) return null;
@@ -321,7 +328,7 @@ function cardEnergy() {
   const e = energyNow();
   const sens = e.revente > 0 ? { lbl: 'Revente', v: e.revente } : { lbl: 'Achat', v: e.achat };
   return `<div class="card span-2 tap" data-act="tab" data-id="energie">
-    <div class="section-head"><h2>Énergie</h2>${e.auto != null ? `<span class="tag accent">Autoconsommation ${pct(e.auto)} %</span>` : ''}</div>
+    <div class="section-head"><h2>Énergie</h2><span class="row" style="gap:6px">${e.couv != null ? `<span class="tag accent" title="Part de ta consommation couverte par le solaire">Solaire ${pct(e.couv)} % de la conso</span>` : ''}${e.auto != null ? `<span class="tag" title="Part de la production utilisée par la maison">Production utilisée ${pct(e.auto)} %</span>` : ''}</span></div>
     <div class="kpis">
       <div class="kpi sun"><div class="lbl">Production</div><div class="val">${watts(e.prod)}</div><div class="small muted">dont FHE estimé ${e.fhe == null ? '–' : nf(e.fhe, 0) + ' W'}</div></div>
       <div class="kpi"><div class="lbl">${sens.lbl} réseau</div><div class="val">${watts(sens.v)}</div><div class="small muted">${nf(e.kwhJour, 1)} kWh achetés aujourd’hui</div></div>
@@ -615,7 +622,7 @@ function viewEnergy() {
       <div class="row between"><span class="muted">Produit (estimé)</span><b>${nf(e.prodJourKwh, 1)} kWh</b></div>
       <div class="row between"><span class="muted">Coût</span><b>${nf(e.cout, 2)} €</b></div>
       <div class="row between"><span class="muted">Pic de puissance</span><b>${nf(k('measure_watt_max.day'), 0)} W</b></div>
-    </div></div>
+    </div><p class="tarif-note">Tarif ${nf(S.prixKwh, 4)} €/kWh · abonnement ${nf(S.aboMois, 2)} €/mois · FHE = Hoymiles × ${nf(S.coefFHE, 2)} · modifiable dans les réglages</p></div>
     <div class="card"><h2>Ce mois-ci</h2><div class="stack">
       <div class="row between"><span class="muted">Acheté</span><b>${nf(k('meter_kwh_this_month'), 0)} kWh</b></div>
       <div class="row between"><span class="muted">Coût estimé</span><b>${nf(moisCout, 2)} €</b></div>
@@ -629,7 +636,6 @@ function viewEnergy() {
     </div></div>
     <div class="card"><h2>Qui consomme en ce moment</h2>${conso.length ? conso.map((d) => `<div class="dev"><div class="nm"><div>${esc(nm(d.id))}</div><div class="small muted">${esc(zoneName(d.zone))}</div></div><b>${nf(d.capabilitiesObj.measure_power.value, 0)} W</b></div>`).join('') : '<p class="muted">Rien de notable.</p>'}</div>
     ${cardBatteries()}
-    <div class="card"><h2>Tarif utilisé</h2><p class="small muted" style="margin:0">${nf(S.prixKwh, 4)} €/kWh · abonnement ${nf(S.aboMois, 2)} €/mois · FHE = Hoymiles × ${nf(S.coefFHE, 2)}. Modifiable dans les réglages.</p></div>
   </div>`;
 }
 
