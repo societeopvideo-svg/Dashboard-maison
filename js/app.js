@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119za';
-import { Homey, forecast, geocode } from './api.js?v=20261119za';
-import { icon, TABS } from './icons.js?v=20261119za';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zb';
+import { Homey, forecast, geocode } from './api.js?v=20261119zb';
+import { icon, TABS } from './icons.js?v=20261119zb';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -867,7 +867,7 @@ function lineSVG(pts, { t0, t1, h = 180, ticks = [] }) {
 }
 
 // Onglet choisi pour chaque tuile (retenu sur l'iPad)
-const cdVues = store.get('consoTuiles', {});
+const cdVues = store.get('consoTuiles2', {});
 
 function calculPeriode(id, vue) {
   const now = Date.now();
@@ -893,7 +893,7 @@ function calculPeriode(id, vue) {
 }
 
 function tuileAppareil(x, cls) {
-  const vue = cdVues[x.id] || 'jour';
+  const vue = cdVues[x.id] || 'direct';
   const r = calculPeriode(x.id, vue);
   const seg = [['direct', 'Direct'], ['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => `<button class="${vue === v ? 'on' : ''}" data-act="ctvue" data-id="${x.id}" data-v="${v}">${l}</button>`).join('');
   const periode = { direct: '20 min', jour: 'aujourd’hui', mois: 'ce mois', annee: 'cette année' }[vue];
@@ -1151,7 +1151,7 @@ async function attendre(id, c, v, delai) {
   return false;
 }
 const actions = {
-  ctvue({ id, v }) { cdVues[id] = v; store.set('consoTuiles', cdVues); render(); },
+  ctvue({ id, v }) { cdVues[id] = v; store.set('consoTuiles2', cdVues); render(); },
   cvue({ v }) { cs.vue = v; cs.sel = null; store.set('consoVue', v); render(); },
   cbar({ i }) { cs.sel = cs.sel === +i ? null : +i; render(); },
   tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); },
