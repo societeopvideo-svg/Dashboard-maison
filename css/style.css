@@ -583,3 +583,17 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .ctile.c-faible .cline path:first-of-type, .ctile.c-moyen .cline path:first-of-type, .ctile.c-eleve .cline path:first-of-type { fill: var(--cc); }
 
 :root[data-theme="light"] { color-scheme: light; }
+
+/* Avatars de saison dans les réglages */
+.av-saisons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 6px; }
+.av-s { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.av-s-img { width: 100%; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--surface-2); border: 1.5px dashed var(--line); display: grid; place-items: center; cursor: pointer; }
+.av-s-img img { width: 100%; height: 100%; object-fit: cover; }
+.av-s-img span { font-size: 22px; color: var(--muted); }
+.av-s.now .av-s-img { border: 2px solid var(--accent); }
+.av-s.now .small { color: var(--accent); font-weight: 600; }
+.av-s-del { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow); font-size: 14px; line-height: 1; color: var(--muted); }
+/* Avatar « soirée / sortie » : gardé en couleur même absent */
+.avatar.off.sortie img, .card.person .avatar.off.sortie img { filter: none; opacity: .9; }
+.av-saisons { grid-template-columns: repeat(5, 1fr); }
+.av-s.sortie .small { text-align: center; line-height: 1.15; }

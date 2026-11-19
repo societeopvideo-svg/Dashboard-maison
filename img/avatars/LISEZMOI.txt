@@ -1,0 +1,16 @@
+Avatars de saison du dashboard
+
+Mettre ici 10 images (format carré conseillé, 512 x 512 px, .png ou .jpg) :
+
+  olivier-printemps.png     veronique-printemps.png
+  olivier-ete.png           veronique-ete.png
+  olivier-automne.png       veronique-automne.png
+  olivier-hiver.png         veronique-hiver.png
+  olivier-sortie.png        veronique-sortie.png   (soirée / sortie)
+
+Tout en minuscules, sans accent ni espace ("ete" et non "été").
+Changement automatique : 20 mars (printemps), 21 juin (été), 22 septembre (automne), 21 décembre (hiver).
+S'il manque une image, le dashboard reprend la photo choisie dans les réglages, ou l'avatar Homey.
+
+L'avatar "sortie" s'affiche quand la personne est absente (réglage par défaut)
+ou le soir de 19 h à 6 h, au choix dans Réglages > Avatar.

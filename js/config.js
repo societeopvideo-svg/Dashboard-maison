@@ -75,6 +75,12 @@ export const CONFIG = {
 
   presence: ['ebd39cb0-9b89-4547-af1d-b88cf2eb6b57', 'fce26290-c84d-4a79-b949-1cd30ea3dd3e'],
 
+  // Avatars de saison rangés dans img/avatars/ : <nom>-printemps.png, -ete, -automne, -hiver, -sortie (.png ou .jpg)
+  avatarsFichiers: {
+    'ebd39cb0-9b89-4547-af1d-b88cf2eb6b57': 'olivier',
+    'fce26290-c84d-4a79-b949-1cd30ea3dd3e': 'veronique',
+  },
+
   alertes: {
     fumee: 'c8f12c60-0d9e-4d10-9aba-f1667e427106',
     baies: ['08283755-af8d-4779-ae32-2a3cede23b16', 'f75e9214-1be7-495b-bc33-c32893ef4896'],

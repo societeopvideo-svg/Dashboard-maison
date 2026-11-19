@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zj';
-import { Homey, forecast, geocode } from './api.js?v=20261119zj';
-import { icon, TABS } from './icons.js?v=20261119zj';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zl';
+import { Homey, forecast, geocode } from './api.js?v=20261119zl';
+import { icon, TABS } from './icons.js?v=20261119zl';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -12,6 +12,7 @@ const store = {
 let S = { ...DEFAUTS, ...store.get('settings', {}) };
 let lock = store.get('lock', { hash: null, salt: null, cred: null });
 const saveSettings = () => { if (!store.set('settings', S)) toast('Mémoire de l’iPad pleine : réglage non enregistré'); };
+const saveSettings2 = () => store.set('settings', S);
 
 const st = {
   devices: {}, zones: {}, users: {},
@@ -93,6 +94,12 @@ function applyTheme() {
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.removeAttribute('media'); m.setAttribute('content', sombre ? '#0F1B2D' : '#F4EEE3'); });
 }
 applyTheme();
+let saisonVue = saison();
+let soirVu = new Date().getHours() >= 19 || new Date().getHours() < 6;
+setInterval(() => {
+  const h = new Date().getHours(), soir = h >= 19 || h < 6;
+  if (saison() !== saisonVue || soir !== soirVu) { saisonVue = saison(); soirVu = soir; render(); }
+}, 5 * 60e3);
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch { /* ancien Safari */ }
 
 /* ---------- Horloge ---------- */
@@ -373,18 +380,53 @@ function cardEnergy() {
   </div>`;
 }
 
+// Saison du jour (dates fixes proches des équinoxes et solstices)
+const SAISONS = [['printemps', 'Printemps'], ['ete', 'Été'], ['automne', 'Automne'], ['hiver', 'Hiver']];
+function saison(d = new Date()) {
+  const md = (d.getMonth() + 1) * 100 + d.getDate();
+  if (md >= 320 && md < 621) return 'printemps';
+  if (md >= 621 && md < 922) return 'ete';
+  if (md >= 922 && md < 1221) return 'automne';
+  return 'hiver';
+}
+// Une image qui ne se charge pas passe à la suivante de sa liste, puis disparaît (l'initiale reste)
+window.avSuivant = (img) => {
+  // quand les images « sortie » sont épuisées, l'avatar de repli reprend le style normal (gris si absent)
+  const n = +(img.dataset.sortie || 0);
+  if (n > 0) { img.dataset.sortie = n - 1; if (n - 1 === 0) img.parentElement?.classList.remove('sortie'); }
+  const l = JSON.parse(img.dataset.alts || '[]');
+  if (!l.length) { img.remove(); return; }
+  img.dataset.alts = JSON.stringify(l.slice(1));
+  img.src = l[0];
+};
+
 function avatarHTML(devId, cls = '') {
   const a = S.avatars[devId] || {};
   const present = cap(devId, 'presence') === true;
-  let src = a.photo || null;
-  if (!src) {
-    const u = findUser(devId, a.user);
-    if (u) src = u.avatar || (u.athomId ? `https://api.athom.com/user/${u.athomId}/avatar` : null);
+  // Ordre : avatar de saison ajouté dans les réglages, puis fichier de saison du site
+  // (img/avatars/<nom>-<saison>.png ou .jpg), puis photo choisie, puis avatar Homey
+  const sz = saison();
+  const sources = [];
+  const cle = C.avatarsFichiers?.[devId];
+  // Avatar « Soirée / Sortie » : quand la personne est absente, ou le soir (19 h – 6 h) selon le réglage
+  const hh = new Date().getHours();
+  const sortie = (a.sortieQuand || 'absent') === 'soir' ? hh >= 19 || hh < 6 : !present && cap(devId, 'presence') === false;
+  if (sortie) {
+    if (a.saisons?.sortie) sources.push(a.saisons.sortie);
+    if (cle) sources.push(`img/avatars/${cle}-sortie.png`, `img/avatars/${cle}-sortie.jpg`);
   }
+  const nbSortie = sources.length;
+  if (a.saisons?.[sz]) sources.push(a.saisons[sz]);
+  if (cle) sources.push(`img/avatars/${cle}-${sz}.png`, `img/avatars/${cle}-${sz}.jpg`);
+  if (a.photo) sources.push(a.photo);
+  const u = findUser(devId, a.user);
+  if (u) { const h = u.avatar || (u.athomId ? `https://api.athom.com/user/${u.athomId}/avatar` : null); if (h) sources.push(h); }
+  const src = sources[0] || null;
   const z = a.zoom || 1, x = a.x || 0, y = a.y || 0;
   const ini = esc((findUser(devId, a.user)?.name || nm(devId)).replace(/^(iphone|ipad)\s*(de|d’|d')\s*/i, '').charAt(0).toUpperCase());
-  const img = src ? `<img src="${esc(src)}" alt="" style="transform:translate(${x}%,${y}%) scale(${z})" onerror="this.remove()">` : '';
-  return `<div class="avatar ${cls} ${present ? 'on' : 'off'}" title="${present ? 'Présent' : 'Absent'}"><span class="ini">${ini}</span>${img}</div>`;
+  const img = src ? `<img src="${esc(src)}" alt="" style="transform:translate(${x}%,${y}%) scale(${z})" data-alts="${esc(JSON.stringify(sources.slice(1)))}" data-sortie="${nbSortie}" onerror="avSuivant(this)">` : '';
+  const enSortie = nbSortie > 0;
+  return `<div class="avatar ${cls} ${present ? 'on' : 'off'} ${enSortie ? 'sortie' : ''}" title="${present ? 'Présent' : 'Absent'}"><span class="ini">${ini}</span>${img}</div>`;
 }
 
 function findUser(devId, userId) {
@@ -1405,7 +1447,13 @@ async function openSettings(scroll = 0) {
           <div class="field"><label>Compte Homey</label><select data-s="avuser" data-id="${id}"><option value="">Automatique</option>${users.map((u) => `<option value="${esc(u.id)}" ${a.user === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
           <div class="row wrap"><label class="btn sm ghost" style="padding:0 14px">Choisir une photo<input type="file" accept="image/*" data-s="avphoto" data-id="${id}" hidden></label>${a.photo ? `<button class="btn sm ghost" data-s-act="avreset" data-id="${id}">Revenir à l’avatar Homey</button>` : ''}</div>
         </div></div>
-      <div class="field" style="margin-top:14px"><label>Zoom</label><input type="range" min="1" max="3" step="0.05" value="${a.zoom || 1}" data-s="avzoom" data-id="${id}"></div>
+      <div class="field" style="margin-top:14px"><label>Avatars de saison <span class="muted">· saison actuelle : ${SAISONS.find(([k]) => k === saison())[1]}</span></label>
+        <div class="av-saisons">${[...SAISONS, ['sortie', 'Soirée / sortie']].map(([k, l]) => `<div class="av-s ${k === saison() ? 'now' : ''} ${k === 'sortie' ? 'sortie' : ''}">
+          <label class="av-s-img">${a.saisons?.[k] ? `<img src="${esc(a.saisons[k])}" alt="">` : `<span>+</span>`}<input type="file" accept="image/*" data-s="avsaison" data-id="${id}" data-saison="${k}" hidden></label>
+          <span class="small">${l}</span>${a.saisons?.[k] ? `<button class="av-s-del" data-s-act="avsaisondel" data-id="${id}" data-saison="${k}" aria-label="Retirer">×</button>` : ''}</div>`).join('')}</div>
+        <span class="hint">L’avatar change tout seul le 20 mars, le 21 juin, le 22 septembre et le 21 décembre.</span></div>
+      <div class="field"><label>Avatar « Soirée / sortie » affiché</label><div class="seg">${[['absent', 'Quand absent'], ['soir', 'Le soir (19 h – 6 h)']].map(([v, l]) => `<button class="${(a.sortieQuand || 'absent') === v ? 'on' : ''}" data-s-act="avsortie" data-id="${id}" data-v="${v}">${l}</button>`).join('')}</div></div>
+      <div class="field"><label>Zoom</label><input type="range" min="1" max="3" step="0.05" value="${a.zoom || 1}" data-s="avzoom" data-id="${id}"></div>
       <div class="field"><label>Centrage horizontal</label><input type="range" min="-30" max="30" step="1" value="${a.x || 0}" data-s="avx" data-id="${id}"></div>
       <div class="field"><label>Centrage vertical</label><input type="range" min="-30" max="30" step="1" value="${a.y || 0}" data-s="avy" data-id="${id}"></div>
     </div>`;
@@ -1472,6 +1520,13 @@ function bindSettings(el) {
       if (!Number.isNaN(n)) { S[k] = n; saveSettings(); }
     } else if (k === 'reveilCapteur') { S.reveilCapteur = t.value; saveSettings(); }
     else if (k === 'avuser') { avs(t.dataset.id).user = t.value || undefined; saveSettings(); applyAvatar(t.dataset.id); }
+    else if (k === 'avsaison' && t.files?.[0]) {
+      const data = await shrink(t.files[0], 360);
+      const a = avs(t.dataset.id);
+      a.saisons = { ...(a.saisons || {}), [t.dataset.saison]: data };
+      if (!saveSettings2()) { delete a.saisons[t.dataset.saison]; toast('Image trop lourde pour la mémoire de l’iPad'); }
+      reopen();
+    }
     else if (k === 'avphoto' && t.files?.[0]) {
       const data = await shrink(t.files[0]);
       const a = avs(t.dataset.id);
@@ -1532,6 +1587,8 @@ function bindSettings(el) {
     } else if (a === 'theme') { S.theme = b.dataset.v; saveSettings(); applyTheme(); reopen();
     } else if (a === 'style') { S.iconStyle = b.dataset.v; saveSettings(); renderTabs(); reopen(); }
     else if (a === 'reveil') { S.reveil = !S.reveil; saveSettings(); reopen(); }
+    else if (a === 'avsortie') { avs(b.dataset.id).sortieQuand = b.dataset.v; saveSettings(); reopen(); }
+    else if (a === 'avsaisondel') { const x = avs(b.dataset.id); if (x.saisons) delete x.saisons[b.dataset.saison]; saveSettings(); reopen(); }
     else if (a === 'avreset') { delete avs(b.dataset.id).photo; saveSettings(); reopen(); }
     else if (a === 'pin') { const sc = el.scrollTop; closeSheet(); await setPin(); st.unlockedUntil = Date.now() + 60e3; openSettings(sc); }
     else if (a === 'faceon') { const ok = await registerFaceId(); toast(ok ? 'Face ID activé' : 'Face ID non activé'); reopen(); }
