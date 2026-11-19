@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119c';
-import { Homey, forecast, geocode } from './api.js?v=20261119c';
-import { icon, TABS } from './icons.js?v=20261119c';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119d';
+import { Homey, forecast, geocode } from './api.js?v=20261119d';
+import { icon, TABS } from './icons.js?v=20261119d';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -320,7 +320,7 @@ function cardEnergy() {
   </div>`;
 }
 
-function avatarHTML(devId) {
+function avatarHTML(devId, cls = '') {
   const a = S.avatars[devId] || {};
   const present = cap(devId, 'presence') === true;
   let src = a.photo || null;
@@ -331,7 +331,7 @@ function avatarHTML(devId) {
   const z = a.zoom || 1, x = a.x || 0, y = a.y || 0;
   const ini = esc((findUser(devId, a.user)?.name || nm(devId)).replace(/^(iphone|ipad)\s*(de|d’|d')\s*/i, '').charAt(0).toUpperCase());
   const img = src ? `<img src="${esc(src)}" alt="" style="transform:translate(${x}%,${y}%) scale(${z})" onerror="this.remove()">` : '';
-  return `<div class="avatar ${present ? 'on' : 'off'}" title="${present ? 'Présent' : 'Absent'}"><span class="ini">${ini}</span>${img}</div>`;
+  return `<div class="avatar ${cls} ${present ? 'on' : 'off'}" title="${present ? 'Présent' : 'Absent'}"><span class="ini">${ini}</span>${img}</div>`;
 }
 
 function findUser(devId, userId) {
@@ -345,7 +345,7 @@ function findUser(devId, userId) {
 }
 
 function cardsPresence() {
-  return C.presence.map((id) => `<div class="card person">${avatarHTML(id)}</div>`).join('');
+  return C.presence.map((id) => avatarHTML(id, 'tile')).join('');
 }
 
 /* Caméras : dernière image transmise à Homey */

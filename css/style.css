@@ -314,3 +314,14 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .live.playing .live-badge { opacity: 1; }
 .card.person { padding: 14px; }
 .card.person .avatar { width: 100%; height: auto; aspect-ratio: 1; max-width: 160px; }
+
+/* Présence : la tuile EST l'avatar (image bord à bord) */
+.avatar.tile {
+  flex: none; width: 170px; height: auto; min-height: 170px; border-radius: var(--radius);
+  box-shadow: var(--shadow), 0 0 0 2px var(--grid); background: var(--surface-2);
+}
+.avatar.tile img { object-fit: cover; object-position: center top; border-radius: inherit; }
+.avatar.tile .ini { font-size: 56px; font-weight: 300; }
+.avatar.tile.on { box-shadow: var(--shadow), 0 0 0 2px var(--accent), 0 0 26px color-mix(in srgb, var(--accent) 40%, transparent); }
+.avatar.tile.off img { filter: grayscale(1) opacity(.5); }
+@media (max-width: 760px) { .avatar.tile { flex: 1; width: auto; aspect-ratio: 1; } }
