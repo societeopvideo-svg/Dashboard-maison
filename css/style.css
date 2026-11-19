@@ -594,7 +594,9 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .av-s.now .small { color: var(--accent); font-weight: 600; }
 .av-s-del { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow); font-size: 14px; line-height: 1; color: var(--muted); }
 /* Avatar « soirée / sortie » : en gris comme les autres quand la personne est absente */
-.av-saisons { grid-template-columns: repeat(5, 1fr); }
+.av-saisons { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.av-s .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.av-s-img { max-width: 92px; }
 .av-s.sortie .small { text-align: center; line-height: 1.15; }
 
 /* Bouton actualiser : l'icône tourne pendant la mise à jour */
