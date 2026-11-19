@@ -593,7 +593,6 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .av-s.now .av-s-img { border: 2px solid var(--accent); }
 .av-s.now .small { color: var(--accent); font-weight: 600; }
 .av-s-del { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow); font-size: 14px; line-height: 1; color: var(--muted); }
-/* Avatar « soirée / sortie » : gardé en couleur même absent */
-.avatar.off.sortie img, .card.person .avatar.off.sortie img { filter: none; opacity: .9; }
+/* Avatar « soirée / sortie » : en gris comme les autres quand la personne est absente */
 .av-saisons { grid-template-columns: repeat(5, 1fr); }
 .av-s.sortie .small { text-align: center; line-height: 1.15; }
