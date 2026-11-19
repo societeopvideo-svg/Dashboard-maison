@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119g';
-import { Homey, forecast, geocode } from './api.js?v=20261119g';
-import { icon, TABS } from './icons.js?v=20261119g';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119h';
+import { Homey, forecast, geocode } from './api.js?v=20261119h';
+import { icon, TABS } from './icons.js?v=20261119h';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -213,24 +213,8 @@ function render() {
   if (fire && !f) { f = document.createElement('div'); f.id = 'fire'; f.className = 'fire'; document.body.appendChild(f); }
   if (f) { if (fire) f.innerHTML = `<div>Fumée détectée<div class="small" style="font-weight:400;margin-top:12px">${esc(fire.sub)}</div></div>`; else f.remove(); }
   paintRanges();
-  squareTiles();
 }
 
-// Tuiles avatar carrées, à la hauteur de la carte météo (sauf sur petit écran)
-function squareTiles() {
-  const wx = document.querySelector('.home-top > .card');
-  const col = document.querySelector('.home-top .people-col');
-  const tiles = document.querySelectorAll('.home-top .avatar.tile');
-  if (!wx || !col || !tiles.length) return;
-  // deux passes : la largeur des tuiles change la hauteur de la météo
-  for (let i = 0; i < 2; i++) {
-    const H = wx.offsetHeight;
-    const vertical = getComputedStyle(col).flexDirection === 'column';
-    const side = Math.round(Math.min(vertical ? (H - 18) / 2 : H, 260));
-    tiles.forEach((t) => { t.style.width = `${side}px`; t.style.height = `${side}px`; });
-  }
-}
-window.addEventListener('resize', squareTiles);
 
 function paintRanges() {
   document.querySelectorAll('input[type=range]').forEach((r) => r.style.setProperty('--p', `${((r.value - r.min) / (r.max - r.min)) * 100}%`));
@@ -362,7 +346,7 @@ function findUser(devId, userId) {
 }
 
 function cardsPresence() {
-  return `<div class="people-col">${C.presence.map((id) => avatarHTML(id, 'tile')).join('')}</div>`;
+  return C.presence.map((id) => avatarHTML(id, 'tile')).join('');
 }
 
 /* Caméras : dernière image transmise à Homey */

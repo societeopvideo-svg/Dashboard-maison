@@ -325,3 +325,23 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .avatar.tile.on { box-shadow: var(--shadow), 0 0 0 2px var(--accent), 0 0 26px color-mix(in srgb, var(--accent) 40%, transparent); }
 .avatar.tile.off img { filter: grayscale(1) opacity(.5); }
 @media (max-width: 760px) { .avatar.tile { flex: 1; width: auto; aspect-ratio: 1; } }
+
+/* Réglages en page entière, même format de cartes que le dashboard */
+.sheet-bg.full { padding: 0; background: var(--bg); display: block; }
+.sheet.full { width: 100%; max-height: none; height: 100%; border-radius: 0; box-shadow: none; background: var(--bg);
+  padding: calc(env(safe-area-inset-top) + 18px) 28px calc(env(safe-area-inset-bottom) + 40px); overflow: auto; }
+.set-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.set-head h1 { margin: 0; }
+.set-grid { align-items: start; }
+.set-card h2 { margin-bottom: 16px; }
+.set-note { margin-bottom: 18px; color: var(--warn); font-size: 14px; }
+.avatar.tile.set-tile { width: 130px; min-height: 130px; height: 130px; }
+
+/* Communes favorites */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.chip { display: inline-flex; align-items: center; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.chip button { padding: 8px 14px; font-size: 14px; }
+.chip button.x { padding: 8px 12px 8px 4px; color: var(--muted); font-size: 16px; }
+.chip.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.chip.on > button:first-child { color: var(--accent); font-weight: 600; }
+.wx-place { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text); }
