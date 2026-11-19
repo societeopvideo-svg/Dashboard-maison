@@ -596,3 +596,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 /* Avatar « soirée / sortie » : en gris comme les autres quand la personne est absente */
 .av-saisons { grid-template-columns: repeat(5, 1fr); }
 .av-s.sortie .small { text-align: center; line-height: 1.15; }
+
+/* Bouton actualiser : l'icône tourne pendant la mise à jour */
+#btn-refresh.turn .ic { animation: tourne .9s linear infinite; }
+@keyframes tourne { to { transform: rotate(360deg); } }

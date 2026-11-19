@@ -48,6 +48,11 @@ const ICONS = {
     body: '<path d="M9 4v3.8C9 8.5 8.5 9 7.8 9H4M20 9h-3.8C15.5 9 15 8.5 15 7.8V4M15 20v-3.8c0-.7.5-1.2 1.2-1.2H20M4 15h3.8c.7 0 1.2.5 1.2 1.2V20" fill="none"/>',
     detail: '',
   },
+  actualiser: {
+    color: '#9AA8B8',
+    body: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" fill="none" stroke-linecap="round"/><path d="M19.6 3.8v4.6H15" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    detail: '',
+  },
   reglages: {
     color: '#9AA8B8',
     body: '<path d="M10.3 3h3.4l.5 2.4 1.6.9 2.3-.8 1.7 2.9-1.8 1.6v1.9l1.8 1.6-1.7 2.9-2.3-.8-1.6.9-.5 2.4h-3.4l-.5-2.4-1.6-.9-2.3.8L4.2 15.5 6 13.9V12L4.2 10.4 5.9 7.5l2.3.8 1.6-.9z"/>',

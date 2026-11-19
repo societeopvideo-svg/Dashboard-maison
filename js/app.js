@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zn';
-import { Homey, forecast, geocode } from './api.js?v=20261119zn';
-import { icon, TABS } from './icons.js?v=20261119zn';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zo';
+import { Homey, forecast, geocode } from './api.js?v=20261119zo';
+import { icon, TABS } from './icons.js?v=20261119zo';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -242,6 +242,7 @@ function renderTabs() {
   nav.className = `tabs style-${style}`;
   nav.innerHTML = TABS.map((t) => `<button data-act="tab" data-id="${t.id}" class="${st.tab === t.id ? 'on' : ''}" aria-label="${t.label}">${icon(t.icon, style, st.tab === t.id && style === 'line')}</button>`).join('');
   $('#btn-settings').innerHTML = icon('reglages', style === 'color' ? 'color' : 'line');
+  if (!$('#btn-refresh').classList.contains('turn')) $('#btn-refresh').innerHTML = icon('actualiser', 'line');
 }
 
 function render() {
@@ -1645,7 +1646,35 @@ async function toggleFull() {
 document.addEventListener('fullscreenchange', paintFullBtn);
 document.addEventListener('webkitfullscreenchange', paintFullBtn);
 
+/* ---------- Actualiser sans quitter le plein écran ---------- */
+// 1) relit tout dans la Homey et sur Internet (météo), la page reste en plein écran ;
+// 2) si une nouvelle version a été mise sur GitHub, recharge la page pour la prendre.
+const VERSION = new URL(import.meta.url).searchParams.get('v') || '';
+async function actualiser() {
+  const b = $('#btn-refresh');
+  if (b.classList.contains('turn')) return;
+  b.classList.add('turn');
+  try {
+    const r = await fetch(`index.html?t=${Date.now()}`, { cache: 'no-store' });
+    const html = r.ok ? await r.text() : '';
+    const v = (html.match(/app\.js\?v=([\w-]+)/) || [])[1];
+    if (v && VERSION && v !== VERSION) {
+      toast('Nouvelle version du dashboard : rechargement…');
+      setTimeout(() => location.reload(), 900);
+      return;
+    }
+  } catch { /* pas de vérification de version hors ligne */ }
+  try {
+    cd.cache = {}; cs.at = 0;
+    await refresh();
+    await Promise.all([refreshSlow(), refreshWeather(true), refreshCurve(true), refreshCameras(true), refreshConso(true)].map((p) => Promise.resolve(p).catch(() => {})));
+    render();
+    toast(st.ok ? 'Données actualisées' : 'Homey injoignable');
+  } finally { b.classList.remove('turn'); }
+}
+
 /* ---------- Démarrage ---------- */
+$('#btn-refresh').addEventListener('click', actualiser);
 $('#btn-settings').addEventListener('click', () => openSettings());
 $('#btn-full').addEventListener('click', toggleFull);
 paintFullBtn();
