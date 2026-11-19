@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zi';
-import { Homey, forecast, geocode } from './api.js?v=20261119zi';
-import { icon, TABS } from './icons.js?v=20261119zi';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zj';
+import { Homey, forecast, geocode } from './api.js?v=20261119zj';
+import { icon, TABS } from './icons.js?v=20261119zj';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -82,6 +82,18 @@ function estInjoignable(d) {
   if (maj && maj > t + 5000) { delete injoignables[d.id]; store.set('injoignables', injoignables); return false; }
   return true;
 }
+
+/* ---------- Thème clair / sombre ---------- */
+// auto = suit l'iPad ; light / dark = choisi à la main dans les réglages
+function applyTheme() {
+  const t = S.theme || 'auto';
+  const root = document.documentElement;
+  if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+  const sombre = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.removeAttribute('media'); m.setAttribute('content', sombre ? '#0F1B2D' : '#F4EEE3'); });
+}
+applyTheme();
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch { /* ancien Safari */ }
 
 /* ---------- Horloge ---------- */
 function tick() {
@@ -1422,6 +1434,7 @@ async function openSettings(scroll = 0) {
     </div>
 
     <div class="card set-card"><h2>Thème et écran</h2>
+      <div class="field"><label>Thème</label><div class="seg">${[['auto', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) => `<button class="${(S.theme || 'auto') === v ? 'on' : ''}" data-s-act="theme" data-v="${v}">${l}</button>`).join('')}</div><span class="hint">« Système » suit le réglage clair / sombre de l’iPad.</span></div>
       <div class="field"><label>Style des icônes</label><div class="seg">${styleSeg.map(([v, l]) => `<button class="${S.iconStyle === v ? 'on' : ''}" data-s-act="style" data-v="${v}">${l}</button>`).join('')}</div></div>
       <div class="row between" style="margin:8px 0 12px;gap:14px"><div><div>Réveil à l’approche</div><div class="small muted">L’écran s’éteint après 3 min et se rallume quand le détecteur voit quelqu’un.</div></div><button class="switch ${S.reveil ? 'on' : ''}" data-s-act="reveil"></button></div>
       ${S.reveil ? `<div class="field"><label>Détecteur de mouvement</label><select data-s="reveilCapteur"><option value="">Choisir…</option>${motion.map((d) => `<option value="${d.id}" ${S.reveilCapteur === d.id ? 'selected' : ''}>${esc(nm(d.id))}</option>`).join('')}</select><span class="hint">Jamais la caméra de l’iPad.</span></div>` : ''}
@@ -1516,6 +1529,7 @@ function bindSettings(el) {
     } else if (a === 'favdel') {
       S.favoris = (S.favoris || []).filter((_, i) => String(i) !== b.dataset.i);
       saveSettings(); reopen();
+    } else if (a === 'theme') { S.theme = b.dataset.v; saveSettings(); applyTheme(); reopen();
     } else if (a === 'style') { S.iconStyle = b.dataset.v; saveSettings(); renderTabs(); reopen(); }
     else if (a === 'reveil') { S.reveil = !S.reveil; saveSettings(); reopen(); }
     else if (a === 'avreset') { delete avs(b.dataset.id).photo; saveSettings(); reopen(); }

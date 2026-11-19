@@ -124,6 +124,7 @@ export const DEFAUTS = {
   aboMois: 19.56,
   coefFHE: 1.04,
   iconStyle: 'line',
+  theme: 'auto',
   commune: '',
   favoris: [],
   lat: null,
