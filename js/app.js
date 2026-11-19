@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119j';
-import { Homey, forecast, geocode } from './api.js?v=20261119j';
-import { icon, TABS } from './icons.js?v=20261119j';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119k';
+import { Homey, forecast, geocode } from './api.js?v=20261119k';
+import { icon, TABS } from './icons.js?v=20261119k';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -724,6 +724,8 @@ const actions = {
   settings() { openSettings(); },
   async blind({ id, v }) {
     await send(id, 'windowcoverings_state', v).catch(() => {});
+    // garder la position cohérente avec l'état (sinon Homey garde deux informations contradictoires)
+    if (v !== 'idle' && has(id, 'windowcoverings_set')) send(id, 'windowcoverings_set', v === 'up' ? 1 : 0, { optimistic: false }).catch(() => {});
     if (v !== 'idle') { st.lastReq[id] = { v: v === 'up' ? 100 : 0, t: Date.now() }; store.set('lastReq', st.lastReq); }
   },
   async portail() {
@@ -785,6 +787,8 @@ document.addEventListener('change', (e) => {
   if (r.dataset.range === 'blind') {
     st.lastReq[id] = { v: Number(r.value), t: Date.now() }; store.set('lastReq', st.lastReq);
     send(id, 'windowcoverings_set', v, { optimistic: false }).catch(() => {});
+    // à fond en haut ou en bas : l'état suit aussi
+    if (has(id, 'windowcoverings_state') && (v >= 0.99 || v <= 0.01)) send(id, 'windowcoverings_state', v >= 0.99 ? 'up' : 'down', { optimistic: false }).catch(() => {});
   } else if (r.dataset.range === 'dim') {
     send(id, 'dim', v, { optimistic: false }).catch(() => {});
   }
