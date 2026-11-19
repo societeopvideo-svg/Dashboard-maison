@@ -374,3 +374,21 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .card.portail .pv { font-size: 18px; font-weight: 500; }
 .card.portail .pv.ouvert { color: var(--warn); }
 .tag { white-space: nowrap; }
+
+/* Chauffage : pastille de température colorée */
+:root { --t-cold: #3E8ED0; --t-ok: #3FA66B; --t-hot: #D9534A; }
+@media (prefers-color-scheme: dark) { :root { --t-cold: #6AAEEA; --t-ok: #63C48C; --t-hot: #EE7A70; } }
+.tdot { width: 104px; height: 104px; border-radius: 50%; display: grid; place-content: center; text-align: center;
+  background: var(--surface-2); box-shadow: inset 0 0 0 4px var(--grid); transition: background .3s, box-shadow .3s; }
+.tdot b { font-size: 30px; font-weight: 400; letter-spacing: -.5px; line-height: 1; }
+.tdot span { font-size: 12px; color: var(--muted); }
+.tdot.cold { background: color-mix(in srgb, var(--t-cold) 18%, var(--surface)); box-shadow: inset 0 0 0 4px var(--t-cold), 0 0 20px color-mix(in srgb, var(--t-cold) 30%, transparent); }
+.tdot.ok   { background: color-mix(in srgb, var(--t-ok) 18%, var(--surface));   box-shadow: inset 0 0 0 4px var(--t-ok),   0 0 20px color-mix(in srgb, var(--t-ok) 30%, transparent); }
+.tdot.hot  { background: color-mix(in srgb, var(--t-hot) 18%, var(--surface));  box-shadow: inset 0 0 0 4px var(--t-hot),  0 0 20px color-mix(in srgb, var(--t-hot) 30%, transparent); }
+.tdot.cold b { color: var(--t-cold); } .tdot.ok b { color: var(--t-ok); } .tdot.hot b { color: var(--t-hot); }
+.zone.off .tdot { filter: grayscale(1); opacity: .6; }
+.legend-dots { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; margin: 0 0 14px 4px; color: var(--text); }
+.legend-dots i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.legend-dots i.cold { background: var(--t-cold); } .legend-dots i.ok { background: var(--t-ok); } .legend-dots i.hot { background: var(--t-hot); }
+.hvac-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.hvac-seg { flex-wrap: wrap; }

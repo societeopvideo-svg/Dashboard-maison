@@ -14,13 +14,19 @@ export const CONFIG = {
     gainable: '576a45db-d201-44c1-893a-11d09c421ca6',
     // thermostat de zone + flow "Bascule Manuel/Programme" correspondant
     zones: [
-      { id: 'fb13ee94-cad0-40b4-a122-258564e02130', bascule: 'b6d97547-84aa-487b-8198-e78dd7caddc0' },
-      { id: '6e110189-ca61-40ee-a419-695254ed9569', bascule: '6a5a8c65-b0f4-4757-8330-0bafd0c9267e' },
-      { id: '3830c311-5991-4b62-8208-07d7037d12ee', bascule: 'ceedf0d1-9f33-42d9-8d78-b239ef7ea93a', co2: 'aee26f19-49d3-44f0-9076-a75ce7ea95ff' },
-      { id: '734431e3-38bc-4030-b581-24e5190b9c43', bascule: 'cddafe50-76ef-4a57-9be3-f9389a447df5', co2: 'cda794ee-78bf-433a-bd47-7c53c1c1d861' },
-      { id: '2edb79d0-9c3d-400f-804b-6a7765b55204', bascule: '537889d7-b411-42dd-9ded-b02910b8e8a5', co2: 'aaa63c4c-ce55-4b4f-86d7-afca30fff096' },
-      { id: '458de9c0-1460-4e1a-9e88-e8409dcf62b0', bascule: 'f836c7a1-dc69-4fe9-a6f0-c5bd375b1e17' },
+      { id: 'fb13ee94-cad0-40b4-a122-258564e02130', zone: 'vie', bascule: 'b6d97547-84aa-487b-8198-e78dd7caddc0' },
+      { id: '6e110189-ca61-40ee-a419-695254ed9569', zone: 'vie', bascule: '6a5a8c65-b0f4-4757-8330-0bafd0c9267e' },
+      { id: '3830c311-5991-4b62-8208-07d7037d12ee', zone: 'nuit', bascule: 'ceedf0d1-9f33-42d9-8d78-b239ef7ea93a', co2: 'aee26f19-49d3-44f0-9076-a75ce7ea95ff' },
+      { id: '734431e3-38bc-4030-b581-24e5190b9c43', zone: 'nuit', bascule: 'cddafe50-76ef-4a57-9be3-f9389a447df5', co2: 'cda794ee-78bf-433a-bd47-7c53c1c1d861' },
+      { id: '2edb79d0-9c3d-400f-804b-6a7765b55204', zone: 'nuit', bascule: '537889d7-b411-42dd-9ded-b02910b8e8a5', co2: 'aaa63c4c-ce55-4b4f-86d7-afca30fff096' },
+      { id: '458de9c0-1460-4e1a-9e88-e8409dcf62b0', zone: 'nuit', bascule: 'f836c7a1-dc69-4fe9-a6f0-c5bd375b1e17' },
     ],
+  },
+
+  // Couleur de la pastille de température : bleu en dessous de min, vert de min à max, rouge au-dessus
+  seuils: {
+    chauffage: { nuit: [17, 20], vie: [20, 22] },
+    clim: [22, 25],
   },
 
   energie: {

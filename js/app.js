@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119l';
-import { Homey, forecast, geocode } from './api.js?v=20261119l';
-import { icon, TABS } from './icons.js?v=20261119l';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119m';
+import { Homey, forecast, geocode } from './api.js?v=20261119m';
+import { icon, TABS } from './icons.js?v=20261119m';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -493,19 +493,40 @@ function viewBlinds() {
 }
 
 /* Chauffage */
+/* Modes du gainable : lus dans la Homey (liste fournie par l'app Cozytouch), sinon liste par défaut */
+const HVAC_FR = { heat: 'Chauffage', heating: 'Chauffage', cool: 'Climatisation', cooling: 'Climatisation', dry: 'Déshumidification', drying: 'Déshumidification', dehumidify: 'Déshumidification', auto: 'Auto', fan: 'Ventilation', fan_only: 'Ventilation', off: 'Arrêt', stop: 'Arrêt' };
+function hvacModes(g) {
+  const vals = st.devices[g]?.capabilitiesObj?.cozytouch_hvac_mode?.values;
+  const list = Array.isArray(vals) && vals.length
+    ? vals.map((v) => [v.id, HVAC_FR[v.id] || (typeof v.title === 'object' ? v.title.fr || v.title.en : v.title) || v.id])
+    : [['heat', 'Chauffage'], ['cool', 'Climatisation'], ['dry', 'Déshumidification'], ['auto', 'Auto'], ['off', 'Arrêt']];
+  const order = ['heat', 'heating', 'cool', 'cooling', 'dry', 'drying', 'dehumidify', 'auto', 'fan', 'fan_only', 'off', 'stop'];
+  return list.sort((a, b) => (order.indexOf(a[0]) + 99) % 99 - (order.indexOf(b[0]) + 99) % 99);
+}
+const isCoolMode = (m) => ['cool', 'cooling', 'dry', 'drying', 'dehumidify'].includes(m);
+
+// Pastille : bleu (trop froid), vert (dans la plage), rouge (trop chaud)
+function tempColor(t, zone, mode) {
+  if (typeof t !== 'number') return 'none';
+  const [lo, hi] = isCoolMode(mode) ? C.seuils.clim : (C.seuils.chauffage[zone] || C.seuils.chauffage.vie);
+  return t < lo ? 'cold' : t > hi ? 'hot' : 'ok';
+}
+
 function viewHeat() {
   const g = C.chauffage.gainable;
   const m = cap(g, 'cozytouch_hvac_mode');
-  const modes = [['heat', 'Chauffage'], ['cool', 'Climatisation'], ['off', 'Arrêt']];
+  const modes = hvacModes(g);
+  const plage = (zone) => { const [lo, hi] = isCoolMode(m) ? C.seuils.clim : C.seuils.chauffage[zone]; return `${lo}–${hi} °C`; };
   const cards = C.chauffage.zones.map((z) => {
     const manuel = cap(z.id, 'cozytouch_heating_mode') === 'manual';
-    const on = cap(z.id, 'onoff') !== false;
+    const on = cap(z.id, 'onoff') !== false && m !== 'off';
     const co2 = z.co2 ? cap(z.co2, 'measure_co2') : null;
+    const t = cap(z.id, 'measure_temperature');
     return `<div class="card zone ${on ? '' : 'off'}">
-      <div class="row between"><div style="font-weight:500">${esc(nm(z.id))}</div><button class="switch ${on ? 'on' : ''}" data-act="zpower" data-id="${z.id}" aria-label="Marche / arrêt"></button></div>
+      <div class="row between"><div><div style="font-weight:500">${esc(nm(z.id))}</div><div class="small muted">Zone ${z.zone === 'nuit' ? 'nuit' : 'vie'}</div></div><button class="switch ${cap(z.id, 'onoff') !== false ? 'on' : ''}" data-act="zpower" data-id="${z.id}" aria-label="Marche / arrêt"></button></div>
       <div class="row between" style="margin:14px 0">
-        <div class="temp">${nf(cap(z.id, 'measure_temperature'), 1)}<span class="unit">°C</span></div>
-        ${co2 && co2 > C.alertes.co2 ? `<span class="tag warn">Aérer · ${nf(co2, 0)} ppm</span>` : ''}
+        <div class="tdot ${tempColor(t, z.zone, m)}" title="Plage de confort ${plage(z.zone)}"><b>${nf(t, 1)}</b><span>°C</span></div>
+        <div style="text-align:right">${co2 && co2 > C.alertes.co2 ? `<span class="tag warn">Aérer · ${nf(co2, 0)} ppm</span><br>` : ''}<span class="small muted">confort ${plage(z.zone)}</span></div>
       </div>
       <div class="row between wrap">
         <div class="seg">
@@ -520,11 +541,13 @@ function viewHeat() {
       </div>
     </div>`;
   }).join('');
+  const label = (modes.find(([v]) => v === m) || [null, m || '–'])[1];
   return `<h1>Chauffage</h1>
-    <div class="card row between wrap" style="margin-bottom:18px">
-      <div><h2 style="margin-bottom:2px">${esc(nm(g) || 'Gainable')}</h2><span class="small muted">Mode général</span></div>
-      <div class="seg">${modes.map(([v, l]) => `<button class="${m === v ? 'on' : ''}" data-act="hvac" data-v="${v}">${l}</button>`).join('')}</div>
+    <div class="card hvac-card" style="margin-bottom:18px">
+      <div><h2 style="margin-bottom:2px">${esc(nm(g) || 'Gainable')}</h2><span class="small muted">Mode actuel : <b>${esc(label)}</b></span></div>
+      <div class="seg hvac-seg">${modes.map(([v, l]) => `<button class="${m === v ? 'on' : ''}" data-act="hvac" data-v="${esc(v)}">${esc(l)}</button>`).join('')}</div>
     </div>
+    <div class="legend-dots"><span><i class="cold"></i>trop frais</span><span><i class="ok"></i>dans la plage</span><span><i class="hot"></i>trop chaud</span><span class="muted">${isCoolMode(m) ? 'plages de climatisation' : 'plages de chauffage'}</span></div>
     <div class="grid">${cards}</div>`;
 }
 
@@ -738,7 +761,13 @@ const actions = {
       toast('Commande envoyée au portail');
     } catch { toast('Commande non envoyée, Homey injoignable'); }
   },
-  hvac({ v }) { send(C.chauffage.gainable, 'cozytouch_hvac_mode', v).catch(() => {}); },
+  async hvac({ v }) {
+    const g = C.chauffage.gainable;
+    if (cap(g, 'cozytouch_hvac_mode') === v) return;
+    const l = (hvacModes(g).find(([x]) => x === v) || [v, v])[1];
+    if (!(await confirmSheet(`Passer le gainable en « ${l} » ?`, 'Le changement s’applique à toutes les pièces.', 'Changer'))) return;
+    send(g, 'cozytouch_hvac_mode', v).catch(() => {});
+  },
   async zmode({ id, flow, v }) {
     if (cap(id, 'cozytouch_heating_mode') === v) return;
     setLocal(id, 'cozytouch_heating_mode', v); render();
