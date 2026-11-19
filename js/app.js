@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119y';
-import { Homey, forecast, geocode } from './api.js?v=20261119y';
-import { icon, TABS } from './icons.js?v=20261119y';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119z';
+import { Homey, forecast, geocode } from './api.js?v=20261119z';
+import { icon, TABS } from './icons.js?v=20261119z';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -105,6 +105,7 @@ async function refresh() {
     st.ok = true; st.err = null;
     trackGarage();
     sample();
+    liveSample();
     wakeOnMotion();
   } catch (e) {
     st.ok = false; st.err = e;
@@ -788,23 +789,120 @@ function viewConso() {
     ${ghost ? `<div class="legend"><span><i style="background:var(--accent)"></i>${anNb}</span><span><i class="lg-ghost"></i>${anNb - 1}</span></div>` : ''}</div>`;
 
   // Consommation instantanée par appareil
-  const appareils = Object.values(st.devices)
-    .filter((d) => typeof d.capabilitiesObj?.measure_power?.value === 'number' && ![C.energie.linky, C.energie.solaire, C.energie.compteur, C.portail.relais].includes(d.id) && d.class !== 'solarpanel' && !C.exclureZones.includes(d.zone))
-    .filter((d) => !C.exclureAppareils.includes(d.id) || C.consoInclure?.includes(d.id))
-    .map((d) => ({ id: d.id, nom: d.id === C.consoGainable ? 'Gainable (estimé)' : nm(d.id), w: d.capabilitiesObj.measure_power.value, piece: zoneName(d.zone) }))
-    .filter((x) => x.w >= 1)
-    .sort((a, b) => b.w - a.w);
+  const appareils = appareilsMesures().filter((x) => x.w >= 1);
   const mesure = appareils.reduce((t, x) => t + x.w, 0);
   const maison = e.conso;
   const reste = maison != null ? Math.max(0, maison - mesure) : null;
   const lignes = [...appareils, ...(reste != null && reste >= 20 ? [{ nom: 'Reste de la maison', w: reste, piece: 'non mesuré', autre: true }] : [])];
   const wmax = Math.max(1, ...lignes.map((x) => x.w));
   const inst = `<div class="card"><div class="section-head"><h2>En ce moment, par appareil</h2><span class="tag accent">Maison ${maison != null ? watts(maison) : '–'}</span></div>
-    ${lignes.length ? `<div class="hbars">${lignes.map((x) => `<div class="hb ${x.autre ? 'autre' : ''}"><div class="hb-nm">${esc(x.nom)}<small>${esc(x.piece || '')}</small></div>
+    ${lignes.length ? `<div class="hbars">${lignes.map((x) => `<div class="hb ${x.autre ? 'autre' : ''} ${x.id && x.id === cd.id ? 'sel' : ''}" ${x.id ? `data-act="cdev" data-id="${x.id}"` : ''}><div class="hb-nm">${esc(x.nom)}<small>${esc(x.piece || '')}</small></div>
       <div class="hb-track"><i style="width:${Math.max(1.5, (x.w / wmax) * 100).toFixed(1)}%"></i></div><b>${watts(x.w)}</b></div>`).join('')}</div>` : '<p class="muted">Aucun appareil mesuré ne consomme en ce moment.</p>'}
     <p class="small muted" style="margin:10px 0 0">Mis à jour toutes les 5 secondes. « Maison » = achat réseau + production solaire utilisée. « Reste » = ce qui n’est pas mesuré par une prise.</p></div>`;
 
-  return `<h1>Consommation</h1><div class="cgrid">${top}${inst}${hist}</div>`;
+  return `<h1>Consommation</h1><div class="cgrid">${top}${inst}${carteAppareil()}${hist}</div>`;
+}
+
+/* ---------- Courbe par appareil : direct, jour, mois, année ---------- */
+function appareilsMesures() {
+  return Object.values(st.devices)
+    .filter((d) => typeof d.capabilitiesObj?.measure_power?.value === 'number' && ![C.energie.linky, C.energie.solaire, C.energie.compteur, C.portail.relais].includes(d.id) && d.class !== 'solarpanel' && !C.exclureZones.includes(d.zone))
+    .filter((d) => !C.exclureAppareils.includes(d.id) || C.consoInclure?.includes(d.id))
+    .map((d) => ({ id: d.id, nom: d.id === C.consoGainable ? 'Gainable (estimé)' : nm(d.id), w: d.capabilitiesObj.measure_power.value, piece: zoneName(d.zone) }))
+    .sort((a, b) => b.w - a.w);
+}
+
+// Relevés en direct gardés en mémoire (20 dernières minutes, toutes les 5 s)
+const direct = {};
+function liveSample() {
+  const t = Date.now();
+  Object.values(st.devices).forEach((d) => {
+    const w = d.capabilitiesObj?.measure_power?.value;
+    if (typeof w !== 'number') return;
+    const a = (direct[d.id] = direct[d.id] || []);
+    a.push({ t, v: w });
+    while (a.length && t - a[0].t > 20 * 60e3) a.shift();
+  });
+}
+
+const cd = { id: store.get('consoDev', null), vue: store.get('consoDevVue', 'jour'), cache: {}, busy: false };
+const RES = { jour: 'today', mois: 'thisMonth', annee: 'thisYear' };
+
+async function chargeAppareil(id, vue) {
+  const key = `${id}|${vue}`;
+  const c = cd.cache[key];
+  if (vue === 'direct' || cd.busy || (c && Date.now() - c.at < 5 * 60e3)) return;
+  cd.busy = true;
+  try {
+    let pts = null;
+    for (const capId of ['measure_power', 'energy_power']) { pts = await homey.insights(id, capId, RES[vue]); if (pts && pts.length) break; }
+    let kwhPts = null;
+    if (has(id, 'meter_power')) kwhPts = await homey.insights(id, 'meter_power', RES[vue]);
+    cd.cache[key] = { at: Date.now(), pts: pts || [], kwhPts: kwhPts || [] };
+  } catch { cd.cache[key] = { at: Date.now(), pts: [], kwhPts: [] }; }
+  cd.busy = false;
+  maybeRender();
+}
+
+function lineSVG(pts, { t0, t1, h = 180, ticks = [] }) {
+  if (!pts || pts.length < 2) return '<p class="small muted" style="margin:30px 0">Pas encore de relevés pour cette période.</p>';
+  const W = 600, H = h, span = t1 - t0;
+  const vmax = Math.max(10, ...pts.map((p) => p.v)) * 1.1;
+  const X = (t) => (((t - t0) / span) * W).toFixed(1);
+  const Y = (v) => (H - (Math.max(0, v) / vmax) * (H - 6)).toFixed(1);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
+  const area = `M${X(pts[0].t)},${H} ${pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ')} L${X(pts[pts.length - 1].t)},${H} Z`;
+  const grid = ticks.map((tk) => `<line x1="${X(tk.t)}" x2="${X(tk.t)}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
+  const mid = [0.5].map((f) => `<line x1="0" x2="${W}" y1="${Y(vmax / 1.1 * f)}" y2="${Y(vmax / 1.1 * f)}" stroke="var(--line)" vector-effect="non-scaling-stroke"/>`).join('');
+  return `<div class="chart-wrap"><svg class="cline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">${grid}${mid}
+    <path d="${area}" fill="var(--accent)" fill-opacity=".16"/>
+    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>
+    <span class="axis-lbl top">${watts(vmax / 1.1)}</span></div>
+    <div class="cb-lbls edge">${ticks.map((tk) => `<span style="left:${((tk.t - t0) / span * 100).toFixed(2)}%">${esc(tk.l)}</span>`).join('')}</div>`;
+}
+
+function carteAppareil() {
+  const liste = appareilsMesures();
+  if (!liste.length) return '';
+  if (!cd.id || !liste.some((x) => x.id === cd.id)) cd.id = liste[0].id;
+  const sel = liste.find((x) => x.id === cd.id);
+  const now = Date.now();
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  let pts = [], t0, t1 = now, ticks = [];
+  if (cd.vue === 'direct') {
+    pts = direct[cd.id] || []; t0 = now - 20 * 60e3;
+    ticks = [20, 15, 10, 5, 0].map((m) => ({ t: now - m * 60e3, l: m ? `-${m} min` : 'maintenant' }));
+  } else {
+    chargeAppareil(cd.id, cd.vue);
+    const c = cd.cache[`${cd.id}|${cd.vue}`];
+    pts = c ? c.pts : null;
+    if (cd.vue === 'jour') { t0 = d0.getTime(); t1 = t0 + 864e5; ticks = [0, 6, 12, 18, 24].map((hh) => ({ t: t0 + hh * 36e5, l: `${hh} h` })); }
+    else if (cd.vue === 'mois') { const m0 = new Date(d0.getFullYear(), d0.getMonth(), 1); const m1 = new Date(d0.getFullYear(), d0.getMonth() + 1, 1); t0 = m0.getTime(); t1 = m1.getTime(); ticks = [1, 8, 15, 22, 29].filter((j) => j <= new Date(m1 - 1).getDate()).map((j) => ({ t: new Date(m0.getFullYear(), m0.getMonth(), j).getTime(), l: String(j) })); }
+    else { const y0 = new Date(d0.getFullYear(), 0, 1); t0 = y0.getTime(); t1 = new Date(d0.getFullYear() + 1, 0, 1).getTime(); ticks = [0, 2, 4, 6, 8, 10].map((m) => ({ t: new Date(d0.getFullYear(), m, 1).getTime(), l: MOIS[m].replace('.', '') })); }
+    if (!c) pts = null;
+  }
+  // Calcul de la consommation sur la période : compteur kWh de l'appareil s'il existe, sinon puissance × temps
+  let kwh = null;
+  const c = cd.cache[`${cd.id}|${cd.vue}`];
+  if (cd.vue !== 'direct' && c && c.kwhPts.length >= 2) kwh = Math.max(0, c.kwhPts[c.kwhPts.length - 1].v - c.kwhPts[0].v);
+  if (kwh == null && pts && pts.length >= 2) { kwh = 0; for (let i = 1; i < pts.length; i++) kwh += ((pts[i - 1].v + pts[i].v) / 2) * ((pts[i].t - pts[i - 1].t) / 36e5) / 1000; }
+  const pic = pts && pts.length ? Math.max(...pts.map((p) => p.v)) : null;
+  const dureeH = pts && pts.length >= 2 ? (pts[pts.length - 1].t - pts[0].t) / 36e5 : 0;
+  const moy = kwh != null && dureeH > 0 ? (kwh * 1000) / dureeH : null;
+  const seg = [['direct', 'Direct'], ['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => `<button class="${cd.vue === v ? 'on' : ''}" data-act="cdvue" data-v="${v}">${l}</button>`).join('');
+  const periode = { direct: '20 dernières minutes', jour: 'aujourd’hui', mois: 'ce mois-ci', annee: `en ${d0.getFullYear()}` }[cd.vue];
+  const chips = liste.map((x) => `<button class="chip ${x.id === cd.id ? 'on' : ''}" data-act="cdev" data-id="${x.id}">${esc(x.nom)}</button>`).join('');
+  return `<div class="card c-full"><div class="section-head"><h2>Par appareil · ${esc(sel.nom)}</h2><div class="seg">${seg}</div></div>
+    <div class="chips cd-chips">${chips}</div>
+    <div class="cd-kpis">
+      <div><span class="lbl">Maintenant</span><b>${watts(sel.w)}</b></div>
+      <div><span class="lbl">Consommé ${periode}</span><b>${kwh == null ? '–' : `${nf(kwh, kwh < 10 ? 2 : 1)}<span class="unit">kWh</span>`}</b><small>${kwh == null ? '' : `${nf(kwh * S.prixKwh, 2)} €`}</small></div>
+      <div><span class="lbl">Pic</span><b>${pic == null ? '–' : watts(pic)}</b></div>
+      <div><span class="lbl">Moyenne</span><b>${moy == null ? '–' : watts(moy)}</b></div>
+    </div>
+    ${pts === null ? '<p class="small muted" style="margin:30px 0">Chargement de l’historique…</p>' : lineSVG(pts, { t0, t1, ticks })}
+    ${cd.vue === 'direct' ? '<p class="small muted" style="margin:8px 0 0">Relevé toutes les 5 secondes depuis l’ouverture du dashboard.</p>' : ''}
+  </div>`;
 }
 
 /* Éclairage et prises */
@@ -1036,6 +1134,8 @@ async function attendre(id, c, v, delai) {
   return false;
 }
 const actions = {
+  cdev({ id }) { cd.id = id; store.set('consoDev', id); render(); },
+  cdvue({ v }) { cd.vue = v; store.set('consoDevVue', v); render(); },
   cvue({ v }) { cs.vue = v; cs.sel = null; store.set('consoVue', v); render(); },
   cbar({ i }) { cs.sel = cs.sel === +i ? null : +i; render(); },
   tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); },

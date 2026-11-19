@@ -517,3 +517,20 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .cgrid .c-full { grid-column: 1 / -1; }
 .cgrid .kpis { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 900px) { .cgrid { grid-template-columns: 1fr; } }
+
+/* Consommation par appareil */
+.cd-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 14px; }
+.cd-chips .chip { padding: 6px 12px; border-radius: 99px; font-size: 13px; background: var(--surface-2); color: var(--muted); border: 1px solid transparent; }
+.cd-chips .chip.on { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.cd-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+.cd-kpis > div { display: flex; flex-direction: column; gap: 2px; }
+.cd-kpis .lbl { font-size: 11px; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); }
+.cd-kpis b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cd-kpis b .unit { font-size: 12px; margin-left: 2px; }
+.cd-kpis small { font-size: 12px; color: var(--muted); }
+.cline { width: 100%; display: block; }
+.hb[data-act] { cursor: pointer; border-radius: 8px; }
+.hb.sel .hb-nm { color: var(--accent); font-weight: 600; }
+@media (max-width: 700px) { .cd-kpis { grid-template-columns: repeat(2, 1fr); } }
+.cb-lbls.edge span:first-child { transform: none; }
+.cb-lbls.edge span:last-child { transform: translateX(-100%); }
