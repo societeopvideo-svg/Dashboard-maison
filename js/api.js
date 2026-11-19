@@ -105,3 +105,37 @@ export async function geocode(name) {
   const j = await r.json();
   return j.results || [];
 }
+
+// Actualité : flux du Monde « À la une » (ordre choisi par la rédaction) et « International ».
+// Les sites d'info ne laissent pas une page web lire leurs flux directement : on passe par rss2json,
+// qui les convertit. Seule l'adresse du flux est envoyée, rien sur la maison.
+const FLUX = {
+  une: 'https://www.lemonde.fr/rss/une.xml',
+  monde: 'https://www.lemonde.fr/international/rss_full.xml',
+};
+async function flux(url) {
+  const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
+  if (!r.ok) throw new Error('actu');
+  const j = await r.json();
+  if (j.status !== 'ok') throw new Error(j.message || 'actu');
+  return (j.items || []).map((i) => ({
+    titre: i.title,
+    lien: i.link,
+    resume: String(i.description || '').replace(/<[^>]+>/g, '').trim(),
+    image: i.thumbnail || i.enclosure?.link || '',
+    t: Date.parse(String(i.pubDate || '').replace(' ', 'T') + 'Z') || null,
+    rubrique: (String(i.link || '').split('/')[3] || '').toLowerCase(),
+  }));
+}
+export async function actualites() {
+  const [une, monde] = await Promise.all([flux(FLUX.une), flux(FLUX.monde).catch(() => [])]);
+  const vu = new Set();
+  const prendre = (l, n) => l.filter((x) => !vu.has(x.lien) && vu.add(x.lien)).slice(0, n);
+  const intl = (x) => x.rubrique === 'international';
+  // magazine, tribunes et jeux vidéo : pas de « l'info la plus importante »
+  const HORS = ['m-le-mag', 'idees', 'pixels', 'le-monde-et-vous', 'jeux'];
+  const garde = (x) => !HORS.includes(x.rubrique);
+  const france = prendre(une.filter((x) => garde(x) && !intl(x)), 4);
+  const mondeL = prendre([...une.filter(intl), ...monde.filter(garde)], 4);
+  return { france, monde: mondeL, at: Date.now() };
+}

@@ -61,7 +61,7 @@ const ICONS = {
 };
 
 export const TABS = [
-  { id: 'accueil', icon: 'home', label: 'Accueil' },
+  { id: 'accueil', icon: 'home', label: 'Home' },
   { id: 'volets', icon: 'volet', label: 'Volets' },
   { id: 'chauffage', icon: 'radiateur', label: 'Chauffage' },
   { id: 'energie', icon: 'energie', label: 'Énergie' },

@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zq';
-import { Homey, forecast, geocode } from './api.js?v=20261119zq';
-import { icon, TABS } from './icons.js?v=20261119zq';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zs';
+import { Homey, forecast, geocode, actualites } from './api.js?v=20261119zs';
+import { icon, TABS } from './icons.js?v=20261119zs';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -520,7 +520,44 @@ function cardAlerts(list) {
 
 function viewHome() {
   return `<div class="home-top">${cardsPresence()}${cardWeather()}</div>
-  <div class="grid">${cardAlerts(alerts())}${cardComfort()}${cardEnergy()}${cardCameras()}<div class="stack-col">${cardBlindsSummary()}${cardLightsSummary()}</div></div>`;
+  <div class="grid">${cardAlerts(alerts())}${cardInfo()}${cardComfort()}${cardEnergy()}${cardCameras()}<div class="stack-col">${cardBlindsSummary()}${cardLightsSummary()}</div></div>`;
+}
+
+/* Info : l'actualité la plus importante, France et Monde (Le Monde, mis à jour toutes les 30 min) */
+const news = { data: store.get('actu', null), busy: false, ouvert: null };
+async function refreshNews(force = false) {
+  if (news.busy || (!force && news.data && Date.now() - news.data.at < 30 * 60e3)) return;
+  news.busy = true;
+  try { news.data = await actualites(); store.set('actu', news.data); }
+  catch (e) { console.warn('actu', e); }
+  news.busy = false;
+  maybeRender();
+}
+function ilya(t) {
+  if (!t) return '';
+  const m = Math.round((Date.now() - t) / 60e3);
+  if (m < 1) return 'à l’instant';
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `il y a ${h} h`;
+  return new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+const RUBRIQUES = { politique: 'Politique', societe: 'Société', economie: 'Économie', planete: 'Planète', sport: 'Sport', culture: 'Culture', idees: 'Idées', pixels: 'Pixels', sciences: 'Sciences', international: 'International', 'm-le-mag': 'M', education: 'Éducation', sante: 'Santé' };
+function cardInfo() {
+  refreshNews();
+  const d = news.data;
+  const col = (titre, l) => `<div class="info-col"><h3>${titre}</h3>${(l || []).map((x) => {
+    const open = news.ouvert === x.lien;
+    return `<div class="info-it ${open ? 'open' : ''}" data-act="info" data-id="${esc(x.lien)}">
+      ${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      <div class="info-tx"><div class="info-t">${esc(x.titre)}</div>
+        <div class="info-m">${x.rubrique !== 'international' && RUBRIQUES[x.rubrique] ? `${esc(RUBRIQUES[x.rubrique])} · ` : ''}${ilya(x.t)}</div>
+        ${open && x.resume ? `<p class="info-r">${esc(x.resume)}</p><a class="info-l" href="${esc(x.lien)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Lire l’article ›</a>` : ''}
+      </div></div>`;
+  }).join('') || '<p class="small muted">Chargement…</p>'}</div>`;
+  return `<div class="card span-2 info"><div class="section-head"><h2>Info</h2><span class="small muted">Le Monde${d ? ` · ${ilya(d.at)}` : ''}</span></div>
+    ${d || news.busy ? `<div class="info-cols">${col('France', d?.france)}${col('Monde', d?.monde)}</div>` : '<p class="small muted">Actualité indisponible pour le moment.</p>'}
+  </div>`;
 }
 
 /* Volets */
@@ -1239,6 +1276,7 @@ const actions = {
   ctvue({ id, v }) { cdVues[id] = v; store.set('consoTuiles2', cdVues); render(); },
   cvue({ v }) { cs.vue = v; cs.sel = null; store.set('consoVue', v); render(); },
   cbar({ i }) { cs.sel = cs.sel === +i ? null : +i; render(); },
+  info({ id }) { news.ouvert = news.ouvert === id ? null : id; render(); },
   tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); },
   settings() { openSettings(); },
   async blind({ id, v }) {
@@ -1677,7 +1715,7 @@ async function actualiser() {
   try {
     cd.cache = {}; cs.at = 0;
     await refresh();
-    await Promise.all([refreshSlow(), refreshWeather(true), refreshCurve(true), refreshCameras(true), refreshConso(true)].map((p) => Promise.resolve(p).catch(() => {})));
+    await Promise.all([refreshSlow(), refreshWeather(true), refreshCurve(true), refreshCameras(true), refreshConso(true), refreshNews(true)].map((p) => Promise.resolve(p).catch(() => {})));
     render();
     toast(st.ok ? 'Données actualisées' : 'Homey injoignable');
   } finally { b.classList.remove('turn'); }
