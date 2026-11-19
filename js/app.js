@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zd';
-import { Homey, forecast, geocode } from './api.js?v=20261119zd';
-import { icon, TABS } from './icons.js?v=20261119zd';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zh';
+import { Homey, forecast, geocode } from './api.js?v=20261119zh';
+import { icon, TABS } from './icons.js?v=20261119zh';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -850,42 +850,50 @@ async function chargeAppareil(id, vue) {
   else maybeRender();
 }
 
-function lineSVG(pts, { t0, t1, h = 180, ticks = [], centre = false }) {
-  if (!pts || pts.length < 2) return '<p class="small muted" style="margin:30px 0">Pas encore de relevés pour cette période.</p>';
+// inverse : le temps va de droite à gauche (le plus récent à gauche)
+function lineSVG(pts, { t0, t1, h = 180, ticks = [], centre = false, inverse = false, now: repereNow = false }) {
+  if (!pts || pts.length < 2) {
+    if (!repereNow) return '<p class="small muted" style="margin:30px 0">Pas encore de relevés pour cette période.</p>';
+    pts = pts || [];
+  }
   const W = 600, H = h, span = t1 - t0;
   const vmax = Math.max(10, ...pts.map((p) => p.v)) * 1.1;
-  const X = (t) => (((t - t0) / span) * W).toFixed(1);
+  const tNow = Date.now();
+  const pos = (t) => (inverse ? (t1 - t) / span : (t - t0) / span);
+  const X = (t) => (pos(t) * W).toFixed(1);
   const Y = (v) => (H - (Math.max(0, v) / vmax) * (H - 6)).toFixed(1);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
-  const area = `M${X(pts[0].t)},${H} ${pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ')} L${X(pts[pts.length - 1].t)},${H} Z`;
+  const area = pts.length ? `M${X(pts[0].t)},${H} ${pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ')} L${X(pts[pts.length - 1].t)},${H} Z` : '';
+  const marque = repereNow && tNow > t0 && tNow < t1 ? `<line x1="${X(tNow)}" x2="${X(tNow)}" y1="0" y2="${H}" stroke="var(--accent)" stroke-width="1" stroke-opacity=".6" vector-effect="non-scaling-stroke"/>` : '';
   const grid = ticks.map((tk) => `<line x1="${X(tk.t)}" x2="${X(tk.t)}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
   const mid = [0.5].map((f) => `<line x1="0" x2="${W}" y1="${Y(vmax / 1.1 * f)}" y2="${Y(vmax / 1.1 * f)}" stroke="var(--line)" vector-effect="non-scaling-stroke"/>`).join('');
   return `<div class="chart-wrap"><svg class="cline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">${grid}${mid}
     <path d="${area}" fill="var(--accent)" fill-opacity=".16"/>
-    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>
-    <span class="axis-lbl top">${watts(vmax / 1.1)}</span></div>
-    <div class="cb-lbls ${centre ? '' : 'edge'}">${ticks.map((tk) => `<span style="left:${((tk.t - t0) / span * 100).toFixed(2)}%">${esc(tk.l)}</span>`).join('')}</div>`;
+    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>${marque}</svg>
+    <span class="axis-lbl top ${inverse ? 'right' : ''}">${watts(vmax / 1.1)}</span></div>
+    <div class="cb-lbls ${centre ? '' : 'edge'}">${ticks.map((tk) => `<span style="left:${(pos(tk.t) * 100).toFixed(2)}%">${esc(tk.l)}</span>`).join('')}</div>`;
 }
 
 // Onglet choisi pour chaque tuile (retenu sur l'iPad)
 const cdVues = store.get('consoTuiles2', {});
+let trancheDirect = null;
 
 function calculPeriode(id, vue) {
   const now = Date.now();
   const d0 = new Date(); d0.setHours(0, 0, 0, 0);
   let pts, t0, t1 = now, ticks = [];
   if (vue === 'direct') {
-    // Dernière heure, repères aux quarts d'heure réels (16 h 15, 16 h 30…)
-    t0 = now - 60 * 60e3;
-    chargeAppareil(id, 'direct');
-    const hist = (cd.cache[`${id}|direct`]?.pts || []).filter((p) => p.t >= t0);
-    const loc = direct[id] || [];
-    const debutLocal = loc.length ? loc[0].t : Infinity;
-    pts = [...hist.filter((p) => p.t < debutLocal), ...loc];
+    // Tranche d'une heure qui démarre à l'heure actuelle (arrondie à 5 min) : 16:50 à gauche,
+    // puis 17:00, 17:10… vers la droite. Quand la tranche est pleine, une nouvelle commence.
+    const cinq = 5 * 60e3;
+    if (!trancheDirect || now >= trancheDirect + 60 * 60e3) trancheDirect = Math.floor(now / cinq) * cinq;
+    t0 = trancheDirect; t1 = t0 + 60 * 60e3;
+    pts = (direct[id] || []).filter((p) => p.t >= t0);
+    const hm = (tq) => { const d = new Date(tq); return `${d.getHours()}:${pad2(d.getMinutes())}`; };
     const q = 15 * 60e3;
-    for (let tq = Math.ceil(t0 / q) * q; tq <= now; tq += q) {
-      const d = new Date(tq);
-      ticks.push({ t: tq, l: `${d.getHours()}:${pad2(d.getMinutes())}` });
+    ticks.push({ t: t0, l: hm(t0) });
+    for (let tq = Math.ceil((t0 + 1) / q) * q; tq <= t1; tq += q) {
+      if (tq - ticks[ticks.length - 1].t >= 14 * 60e3 && t1 - tq >= 0) ticks.push({ t: tq, l: hm(tq) });
     }
   } else {
     chargeAppareil(id, vue);
@@ -911,7 +919,7 @@ function tuileAppareil(x, cls) {
   return `<div class="card ctile ${cls} ${x.w >= 1 ? 'on' : ''}">
     <div class="ct-head"><div class="ct-nm"><b>${esc(x.nom)}</b><small>${esc(x.piece || '')}</small></div><span class="ct-w">${watts(x.w)}</span></div>
     <div class="seg ct-seg">${seg}</div>
-    ${r.pts === null ? '<p class="small muted ct-wait">Chargement…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84, centre: vue === 'direct' })}
+    ${r.pts === null ? '<p class="small muted ct-wait">Chargement…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84, now: vue === 'direct' })}
     <div class="ct-foot"><span>${periode} : <b>${r.kwh == null ? '–' : `${nf(r.kwh, r.kwh < 10 ? 2 : 1)} kWh`}</b>${r.kwh == null ? '' : ` · ${nf(r.kwh * S.prixKwh, 2)} €`}</span><span class="muted">pic ${r.pic == null ? '–' : watts(r.pic)}</span></div>
   </div>`;
 }
