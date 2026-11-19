@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119v';
-import { Homey, forecast, geocode } from './api.js?v=20261119v';
-import { icon, TABS } from './icons.js?v=20261119v';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119w';
+import { Homey, forecast, geocode } from './api.js?v=20261119w';
+import { icon, TABS } from './icons.js?v=20261119w';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -716,14 +716,42 @@ function viewLights() {
 
 function viewPlugs() {
   const plugs = visible().filter((d) => C.classesPrises.includes(d.class) && has(d.id, 'onoff'));
-  return `<h1>Prises</h1><div class="grid">${byZone(plugs).map(([z, list]) => `<div class="card"><h2>${esc(z)}</h2>
-    ${list.map((d) => {
-      const on = cap(d.id, 'onoff') === true;
-      const p = cap(d.id, 'measure_power');
-      const prot = C.prisesProtegees.includes(d.id);
-      return `<div class="dev"><div class="nm"><div>${esc(nm(d.id))}</div><div class="small muted">${typeof p === 'number' ? nf(p, 0) + ' W' : ''}${prot ? ' · protégée' : ''}</div></div>
-        <button class="switch ${on ? 'on' : ''}" data-act="plug" data-id="${d.id}" aria-label="Allumer / couper"></button></div>`;
-    }).join('')}</div>`).join('')}</div>`;
+  if (!plugs.length) return '<h1>Prises</h1><div class="empty">Aucune prise trouvée.</div>';
+  const plugOn = (d) => !estInjoignable(d) && cap(d.id, 'onoff') === true;
+  const prot = (d) => C.prisesProtegees.includes(d.id);
+  const pieces = {};
+  plugs.forEach((d) => { (pieces[d.zone] = pieces[d.zone] || []).push(d); });
+  const card = (zid, list, cls) => {
+    const nbOn = list.filter(plugOn).length;
+    // « Tout couper » ne touche pas aux prises protégées (elles se coupent une par une, avec confirmation)
+    const aCouper = list.filter((d) => plugOn(d) && !prot(d)).map((d) => d.id).join(',');
+    const aAllumer = list.filter((d) => !plugOn(d)).map((d) => d.id).join(',');
+    let btn = '';
+    if (list.length > 1) {
+      if (nbOn && aCouper) btn = `<button class="btn sm lampbtn on" data-act="zonelights" data-ids="${aCouper}" data-v="off">Tout couper</button>`;
+      else if (!nbOn) btn = `<button class="btn sm lampbtn" data-act="zonelights" data-ids="${aAllumer}" data-v="on">Tout allumer</button>`;
+    }
+    return `<div class="card lamps ${cls}"><div class="section-head"><h2>${esc(zoneName(zid) || 'Maison')}</h2>${btn}</div>
+      ${list.map((d) => {
+        const on = plugOn(d);
+        const inj = estInjoignable(d);
+        const w = cap(d.id, 'measure_power');
+        const sub = [inj ? 'ne répond pas' : typeof w === 'number' ? `${nf(w, 0)} W` : '', prot(d) ? 'protégée' : ''].filter(Boolean).join(' · ');
+        return `<div class="lamp2 ${on ? 'on' : ''} ${inj ? 'off-line' : ''}"><div class="l2-row"><div class="nm"><div>${esc(nm(d.id))}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>
+          <button class="switch ${on ? 'on' : ''}" data-act="plug" data-id="${d.id}" aria-label="Allumer / couper"></button></div></div>`;
+      }).join('')}</div>`;
+  };
+  const ZONES = [['vie', 'Zone vie', 'z-vie'], ['nuit', 'Zone nuit', 'z-nuit'], ['autres', 'Extérieur et annexes', 'z-autres']];
+  return `<h1>Prises</h1><div class="lzones">${ZONES.map(([k, titre, cls]) => {
+    const zids = Object.keys(pieces).filter((zid) => zoneDePiece(zid) === k)
+      .sort((a, b) => (zoneName(a) || '').localeCompare(zoneName(b) || '', 'fr', { numeric: true }));
+    if (!zids.length) return '';
+    const all = zids.flatMap((zid) => pieces[zid]);
+    const nbOn = all.filter(plugOn).length;
+    const w = all.reduce((t, d) => t + (plugOn(d) && typeof cap(d.id, 'measure_power') === 'number' ? cap(d.id, 'measure_power') : 0), 0);
+    return `<section class="lzone ${cls}"><div class="lz-head"><div class="zb-title"><b>${titre}</b><span>${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${all.length}${w >= 1 ? ` · ${nf(w, 0)} W` : ''}` : 'tout est coupé'}</span></div></div>
+      <div class="lcards">${zids.map((zid) => card(zid, pieces[zid], cls)).join('')}</div></section>`;
+  }).join('')}</div>`;
 }
 
 /* ---------- Feuilles ---------- */
@@ -931,7 +959,8 @@ const actions = {
   zoneoff({ ids }) { ids.split(',').forEach((id) => { if (cap(id, 'onoff')) send(id, 'onoff', false).catch(() => {}); }); },
   cam({ id }) { openLive(id); },
   async plug({ id }) {
-    const on = cap(id, 'onoff') === true;
+    const d = dev(id);
+    const on = d ? !estInjoignable(d) && cap(id, 'onoff') === true : cap(id, 'onoff') === true;
     if (on && C.prisesProtegees.includes(id)) {
       const ok = await confirmSheet(`Couper « ${nm(id)} » ?`, 'Cet appareil est protégé : le couper peut interrompre un cycle ou un équipement.', 'Couper');
       if (!ok) return;

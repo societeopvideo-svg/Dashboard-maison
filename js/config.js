@@ -58,7 +58,11 @@ export const CONFIG = {
 
   // Pièces sans volet rattachées à une zone (les autres sont déduites des volets)
   piecesZone: {
-    vie: ['140895f0-1a40-4e01-9f42-b1c54bf7b27a'], // Entrée
+    vie: [
+      '140895f0-1a40-4e01-9f42-b1c54bf7b27a', // Entrée
+      '131b328f-2414-4919-be78-157b384f0269', // Garage
+      '8bd548f7-408f-4611-99e7-aa7a81ca8cd5', // Buanderie
+    ],
     nuit: ['e95ba9f5-ec5b-4692-9c39-429f818a6f04'], // Salle de bain
   },
 
