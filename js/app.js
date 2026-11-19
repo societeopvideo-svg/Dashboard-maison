@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119m';
-import { Homey, forecast, geocode } from './api.js?v=20261119m';
-import { icon, TABS } from './icons.js?v=20261119m';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119o';
+import { Homey, forecast, geocode } from './api.js?v=20261119o';
+import { icon, TABS } from './icons.js?v=20261119o';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -505,6 +505,17 @@ function hvacModes(g) {
 }
 const isCoolMode = (m) => ['cool', 'cooling', 'dry', 'drying', 'dehumidify'].includes(m);
 
+// En Auto, c'est le gainable qui choisit chauffage ou clim : on lit ce qu'il fait réellement,
+// d'après le mode de travail des zones (thermostat_mode : heat / cool).
+function modeEffectif(m, zoneId) {
+  if (m !== 'auto') return m;
+  const lire = (id) => cap(id, 'thermostat_mode');
+  const z = zoneId ? lire(zoneId) : null;
+  const tous = C.chauffage.zones.map((x) => lire(x.id)).filter(Boolean);
+  const v = z || (tous.includes('cool') ? 'cool' : tous[0]);
+  return isCoolMode(v) ? 'cool' : 'heat';
+}
+
 // Pastille : bleu (trop froid), vert (dans la plage), rouge (trop chaud)
 function tempColor(t, zone, mode) {
   if (typeof t !== 'number') return 'none';
@@ -516,17 +527,19 @@ function viewHeat() {
   const g = C.chauffage.gainable;
   const m = cap(g, 'cozytouch_hvac_mode');
   const modes = hvacModes(g);
-  const plage = (zone) => { const [lo, hi] = isCoolMode(m) ? C.seuils.clim : C.seuils.chauffage[zone]; return `${lo}–${hi} °C`; };
+  const plage = (zone, zid) => { const [lo, hi] = isCoolMode(modeEffectif(m, zid)) ? C.seuils.clim : C.seuils.chauffage[zone]; return `${lo}–${hi} °C`; };
   const cards = C.chauffage.zones.map((z) => {
-    const manuel = cap(z.id, 'cozytouch_heating_mode') === 'manual';
+    const pm = pendingMode[z.id];
+    const manuel = pm ? pm.v === 'manual' : cap(z.id, 'cozytouch_heating_mode') === 'manual';
+    const confirme = !pm && cap(z.id, 'cozytouch_heating_mode') === 'manual';
     const on = cap(z.id, 'onoff') !== false && m !== 'off';
     const co2 = z.co2 ? cap(z.co2, 'measure_co2') : null;
     const t = cap(z.id, 'measure_temperature');
     return `<div class="card zone ${on ? '' : 'off'}">
-      <div class="row between"><div><div style="font-weight:500">${esc(nm(z.id))}</div><div class="small muted">Zone ${z.zone === 'nuit' ? 'nuit' : 'vie'}</div></div><button class="switch ${cap(z.id, 'onoff') !== false ? 'on' : ''}" data-act="zpower" data-id="${z.id}" aria-label="Marche / arrêt"></button></div>
+      <div class="row between"><div><div style="font-weight:500">${esc(nm(z.id))}</div><div class="small muted">Zone ${z.zone === 'nuit' ? 'nuit' : 'vie'}${pm ? ` · <span class="wait">passage en ${pm.v === 'manual' ? 'manuel' : 'programme'}…</span>` : pendingSet[z.id] != null ? ' · <span class="wait">envoi de la consigne…</span>' : ''}</div></div><button class="switch ${cap(z.id, 'onoff') !== false ? 'on' : ''}" data-act="zpower" data-id="${z.id}" aria-label="Marche / arrêt"></button></div>
       <div class="row between" style="margin:14px 0">
-        <div class="tdot ${tempColor(t, z.zone, m)}" title="Plage de confort ${plage(z.zone)}"><b>${nf(t, 1)}</b><span>°C</span></div>
-        <div style="text-align:right">${co2 && co2 > C.alertes.co2 ? `<span class="tag warn">Aérer · ${nf(co2, 0)} ppm</span><br>` : ''}<span class="small muted">confort ${plage(z.zone)}</span></div>
+        <div class="tdot ${tempColor(t, z.zone, modeEffectif(m, z.id))}" title="Plage de confort ${plage(z.zone, z.id)}"><b>${nf(t, 1)}</b><span>°C</span></div>
+        <div style="text-align:right">${co2 && co2 > C.alertes.co2 ? `<span class="tag warn">Aérer · ${nf(co2, 0)} ppm</span><br>` : ''}<span class="small muted">confort ${plage(z.zone, z.id)}</span></div>
       </div>
       <div class="row between wrap">
         <div class="seg">
@@ -534,20 +547,21 @@ function viewHeat() {
           <button class="${manuel ? 'on' : ''}" data-act="zmode" data-id="${z.id}" data-flow="${z.bascule}" data-v="manual">Manuel</button>
         </div>
         <div class="setp">
-          <button class="btn sm" data-act="zset" data-id="${z.id}" data-v="-0.5" ${manuel && on ? '' : 'disabled'} aria-label="Baisser">−</button>
-          <span class="v">${nf(cap(z.id, 'target_temperature'), 1)}°</span>
-          <button class="btn sm" data-act="zset" data-id="${z.id}" data-v="0.5" ${manuel && on ? '' : 'disabled'} aria-label="Monter">+</button>
+          <button class="btn sm" data-act="zset" data-id="${z.id}" data-v="-0.5" ${confirme && on ? '' : 'disabled'} aria-label="Baisser">−</button>
+          <span class="v ${pendingSet[z.id] != null ? 'wait' : ''}">${nf(cap(z.id, 'target_temperature'), 1)}°</span>
+          <button class="btn sm" data-act="zset" data-id="${z.id}" data-v="0.5" ${confirme && on ? '' : 'disabled'} aria-label="Monter">+</button>
         </div>
       </div>
     </div>`;
   }).join('');
-  const label = (modes.find(([v]) => v === m) || [null, m || '–'])[1];
+  let label = (modes.find(([v]) => v === m) || [null, m || '–'])[1];
+  if (m === 'auto') label += isCoolMode(modeEffectif(m)) ? ' · climatisation en cours' : ' · chauffage en cours';
   return `<h1>Chauffage</h1>
     <div class="card hvac-card" style="margin-bottom:18px">
       <div><h2 style="margin-bottom:2px">${esc(nm(g) || 'Gainable')}</h2><span class="small muted">Mode actuel : <b>${esc(label)}</b></span></div>
       <div class="seg hvac-seg">${modes.map(([v, l]) => `<button class="${m === v ? 'on' : ''}" data-act="hvac" data-v="${esc(v)}">${esc(l)}</button>`).join('')}</div>
     </div>
-    <div class="legend-dots"><span><i class="cold"></i>trop frais</span><span><i class="ok"></i>dans la plage</span><span><i class="hot"></i>trop chaud</span><span class="muted">${isCoolMode(m) ? 'plages de climatisation' : 'plages de chauffage'}</span></div>
+    <div class="legend-dots"><span><i class="cold"></i>trop frais</span><span><i class="ok"></i>dans la plage</span><span><i class="hot"></i>trop chaud</span><span class="muted">${isCoolMode(modeEffectif(m)) ? 'plages de climatisation' : 'plages de chauffage'}</span></div>
     <div class="grid">${cards}</div>`;
 }
 
@@ -742,6 +756,21 @@ function openLive(id) {
 
 /* ---------- Actions ---------- */
 const zTimers = {};
+const pendingMode = {}; // pièce -> mode demandé, en attente de confirmation
+const pendingSet = {};  // pièce -> consigne demandée, en attente de confirmation
+// Interroge la Homey jusqu'à ce que la valeur demandée soit confirmée (ou délai dépassé)
+async function attendre(id, c, v, delai) {
+  const fin = Date.now() + delai;
+  while (Date.now() < fin) {
+    await new Promise((r) => setTimeout(r, 2500));
+    try {
+      const d = await homey.device(id);
+      if (d) st.devices[id] = d;
+      if (d?.capabilitiesObj?.[c]?.value === v) return true;
+    } catch { /* on réessaie */ }
+  }
+  return false;
+}
 const actions = {
   tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); },
   settings() { openSettings(); },
@@ -769,16 +798,42 @@ const actions = {
     send(g, 'cozytouch_hvac_mode', v).catch(() => {});
   },
   async zmode({ id, flow, v }) {
+    if (pendingMode[id]) { toast('Changement de mode déjà en cours…'); return; }
     if (cap(id, 'cozytouch_heating_mode') === v) return;
-    setLocal(id, 'cozytouch_heating_mode', v); render();
-    try { await homey.triggerFlow(flow); toast(v === 'manual' ? 'Pièce passée en manuel' : 'Retour au programme'); }
-    catch (e) { setLocal(id, 'cozytouch_heating_mode', v === 'manual' ? 'prog' : 'manual'); render(); toast(e.status === 403 ? 'La clé n’a pas le droit de lancer les flows' : 'Commande non envoyée'); }
+    const avant = cap(id, 'cozytouch_heating_mode');
+    pendingMode[id] = { v, since: Date.now() };
+    render();
+    // 1) on demande directement le mode voulu (pas d'« inverser ») ; 2) secours : le flow de bascule
+    try {
+      await homey.setCapability(id, 'cozytouch_heating_mode', v);
+    } catch (e) {
+      try { await homey.triggerFlow(flow); }
+      catch (e2) { delete pendingMode[id]; render(); toast(e2.status === 403 ? 'La clé n’a pas le droit de changer le mode' : 'Commande non envoyée'); return; }
+    }
+    // 3) on attend que la pièce confirme (jusqu'à 30 s)
+    const ok = await attendre(id, 'cozytouch_heating_mode', v, 30000);
+    delete pendingMode[id];
+    if (ok) toast(`${nm(id)} : ${v === 'manual' ? 'passée en manuel, tu peux régler la consigne' : 'retour au programme'}`);
+    else { setLocal(id, 'cozytouch_heating_mode', avant); toast(`${nm(id)} n’a pas confirmé le changement de mode. Réessaie dans un instant.`); }
+    render();
   },
   zset({ id, v }) {
-    const t = clamp(Math.round(((cap(id, 'target_temperature') ?? 20) + Number(v)) * 2) / 2, 7, 30);
-    setLocal(id, 'target_temperature', t); render();
+    if (pendingMode[id]) { toast('Attends que la pièce confirme le mode manuel'); return; }
+    if (cap(id, 'cozytouch_heating_mode') !== 'manual') { toast('Passe d’abord la pièce en Manuel'); return; }
+    const o = st.devices[id]?.capabilitiesObj?.target_temperature || {};
+    const lo = typeof o.min === 'number' ? o.min : 7, hi = typeof o.max === 'number' ? o.max : 30;
+    const t = clamp(Math.round(((cap(id, 'target_temperature') ?? 20) + Number(v)) * 2) / 2, lo, hi);
+    if (t === cap(id, 'target_temperature')) { toast(`Consigne limitée entre ${nf(lo, 1)}° et ${nf(hi, 1)}°`); return; }
+    setLocal(id, 'target_temperature', t); pendingSet[id] = t; render();
     clearTimeout(zTimers[id]);
-    zTimers[id] = setTimeout(() => send(id, 'target_temperature', t, { optimistic: false }).catch(() => {}), 900);
+    zTimers[id] = setTimeout(async () => {
+      try { await homey.setCapability(id, 'target_temperature', t); }
+      catch { delete pendingSet[id]; toast('Consigne non envoyée, Homey injoignable'); render(); return; }
+      const ok = await attendre(id, 'target_temperature', t, 20000);
+      delete pendingSet[id];
+      if (!ok) toast(`${nm(id)} n’a pas gardé la consigne de ${nf(t, 1)}°. Vérifie qu’elle est bien en Manuel.`);
+      render();
+    }, 900);
   },
   zpower({ id }) { send(id, 'onoff', cap(id, 'onoff') === false).catch(() => {}); },
   onoff({ id }) { send(id, 'onoff', !cap(id, 'onoff')).catch(() => {}); },

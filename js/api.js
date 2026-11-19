@@ -34,6 +34,7 @@ export class Homey {
   }
 
   devices() { return this.req('/manager/devices/device/'); }
+  device(id) { return this.req(`/manager/devices/device/${id}`); }
   zones() { return this.req('/manager/zones/zone/'); }
   users() { return this.req('/manager/users/user/'); }
 

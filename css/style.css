@@ -392,3 +392,6 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .legend-dots i.cold { background: var(--t-cold); } .legend-dots i.ok { background: var(--t-ok); } .legend-dots i.hot { background: var(--t-hot); }
 .hvac-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .hvac-seg { flex-wrap: wrap; }
+
+.wait { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
