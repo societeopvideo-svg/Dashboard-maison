@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zl';
-import { Homey, forecast, geocode } from './api.js?v=20261119zl';
-import { icon, TABS } from './icons.js?v=20261119zl';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zm';
+import { Homey, forecast, geocode } from './api.js?v=20261119zm';
+import { icon, TABS } from './icons.js?v=20261119zm';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -423,10 +423,9 @@ function avatarHTML(devId, cls = '') {
   if (u) { const h = u.avatar || (u.athomId ? `https://api.athom.com/user/${u.athomId}/avatar` : null); if (h) sources.push(h); }
   const src = sources[0] || null;
   const z = a.zoom || 1, x = a.x || 0, y = a.y || 0;
-  const ini = esc((findUser(devId, a.user)?.name || nm(devId)).replace(/^(iphone|ipad)\s*(de|d’|d')\s*/i, '').charAt(0).toUpperCase());
   const img = src ? `<img src="${esc(src)}" alt="" style="transform:translate(${x}%,${y}%) scale(${z})" data-alts="${esc(JSON.stringify(sources.slice(1)))}" data-sortie="${nbSortie}" onerror="avSuivant(this)">` : '';
   const enSortie = nbSortie > 0;
-  return `<div class="avatar ${cls} ${present ? 'on' : 'off'} ${enSortie ? 'sortie' : ''}" title="${present ? 'Présent' : 'Absent'}"><span class="ini">${ini}</span>${img}</div>`;
+  return `<div class="avatar ${cls} ${present ? 'on' : 'off'} ${enSortie ? 'sortie' : ''}" title="${present ? 'Présent' : 'Absent'}">${img}</div>`;
 }
 
 function findUser(devId, userId) {
