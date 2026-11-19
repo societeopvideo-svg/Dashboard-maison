@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119q';
-import { Homey, forecast, geocode } from './api.js?v=20261119q';
-import { icon, TABS } from './icons.js?v=20261119q';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119r';
+import { Homey, forecast, geocode } from './api.js?v=20261119r';
+import { icon, TABS } from './icons.js?v=20261119r';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -410,7 +410,7 @@ function cardCameras() {
 
 function cardLightsSummary() {
   const lights = visible().filter((d) => d.class === 'light' && has(d.id, 'onoff'));
-  const on = lights.filter((d) => cap(d.id, 'onoff') === true).length;
+  const on = lights.filter(lampOn).length;
   return `<div class="card tap ${on ? 'glow' : ''}" data-act="tab" data-id="eclairage"><h2>Lumière</h2>
     <div class="row between"><div class="mid">${on}<span class="unit">allumée${on > 1 ? 's' : ''}</span></div><div class="mid">${lights.length - on}<span class="unit">éteinte${lights.length - on > 1 ? 's' : ''}</span></div></div>
   </div>`;
@@ -646,18 +646,31 @@ function byZone(list) {
   return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
 }
 
+// Une lampe Hue coupée à l'interrupteur devient injoignable mais garde « allumée » dans la Homey
+const lampOff = (d) => d.available === false;
+const lampOn = (d) => !lampOff(d) && cap(d.id, 'onoff') === true;
+const ORDRE_PIECES = ['Chambre 1', 'Salon'];
+
 function viewLights() {
   const lights = visible().filter((d) => d.class === 'light' && has(d.id, 'onoff'));
   if (!lights.length) return '<h1>Éclairage</h1><div class="empty">Aucun éclairage trouvé.</div>';
-  return `<h1>Éclairage</h1><div class="grid">${byZone(lights).map(([z, list]) => {
-    const anyOn = list.some((d) => cap(d.id, 'onoff'));
-    return `<div class="card"><div class="section-head"><h2>${esc(z)}</h2>${anyOn ? `<button class="btn sm ghost" data-act="zoneoff" data-ids="${list.map((d) => d.id).join(',')}">Tout éteindre</button>` : ''}</div>
+  const rang = (z) => { const i = ORDRE_PIECES.findIndex((n) => n.toLowerCase() === z.trim().toLowerCase()); return i < 0 ? 99 : i; };
+  const zones = byZone(lights).sort((a, b) => rang(a[0]) - rang(b[0]) || a[0].localeCompare(b[0], 'fr'));
+  return `<h1>Éclairage</h1><div class="grid">${zones.map(([z, list]) => {
+    const joignables = list.filter((d) => !lampOff(d));
+    const nbOn = list.filter(lampOn).length;
+    const ids = joignables.map((d) => d.id).join(',');
+    const grp = list.length > 1 ? `<div class="lamp-grp ${nbOn ? 'on' : ''}"><div class="nm"><div>Toute la pièce</div><div class="small muted">${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${list.length}` : 'tout est éteint'}</div></div>
+      <button class="switch ${nbOn ? 'on' : ''}" data-act="zonelights" data-ids="${ids}" data-v="${nbOn ? 'off' : 'on'}" aria-label="Allumer / éteindre toute la pièce" ${ids ? '' : 'disabled'}></button></div>` : '';
+    return `<div class="card"><h2>${esc(z)}</h2>${grp}
       ${list.map((d) => {
-        const on = cap(d.id, 'onoff') === true;
+        const inj = lampOff(d);
+        const on = lampOn(d);
         const dim = has(d.id, 'dim') ? pct(cap(d.id, 'dim') ?? 0) : null;
-        return `<div class="dev"><div class="nm"><div>${esc(nm(d.id))}</div></div>
-          ${dim != null ? `<input class="dim" type="range" min="1" max="100" value="${dim || 1}" data-range="dim" data-id="${d.id}" aria-label="Intensité" ${on ? '' : 'disabled style="opacity:.4"'}>` : ''}
-          <button class="switch ${on ? 'on' : ''}" data-act="onoff" data-id="${d.id}" aria-label="Allumer / éteindre"></button></div>`;
+        const sub = inj ? 'injoignable · coupée à l’interrupteur ?' : on && dim != null ? `${dim} %` : '';
+        return `<div class="dev lamp ${on ? 'on' : ''} ${inj ? 'off-line' : ''}"><div class="nm"><div>${esc(nm(d.id))}</div>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>
+          ${dim != null && !inj ? `<input class="dim" type="range" min="1" max="100" value="${dim || 1}" data-range="dim" data-id="${d.id}" aria-label="Intensité" ${on ? '' : 'disabled style="opacity:.4"'}>` : ''}
+          <button class="switch ${on ? 'on' : ''}" data-act="onoff" data-id="${d.id}" aria-label="Allumer / éteindre" ${inj ? 'disabled' : ''}></button></div>`;
       }).join('')}</div>`;
   }).join('')}</div>`;
 }
@@ -874,6 +887,7 @@ const actions = {
   },
   zpower({ id }) { send(id, 'onoff', cap(id, 'onoff') === false).catch(() => {}); },
   onoff({ id }) { send(id, 'onoff', !cap(id, 'onoff')).catch(() => {}); },
+  zonelights({ ids, v }) { const on = v === 'on'; ids.split(',').filter(Boolean).forEach((id) => { if (cap(id, 'onoff') !== on) send(id, 'onoff', on).catch(() => {}); }); },
   zoneoff({ ids }) { ids.split(',').forEach((id) => { if (cap(id, 'onoff')) send(id, 'onoff', false).catch(() => {}); }); },
   cam({ id }) { openLive(id); },
   async plug({ id }) {
