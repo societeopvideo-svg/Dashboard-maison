@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119z';
-import { Homey, forecast, geocode } from './api.js?v=20261119z';
-import { icon, TABS } from './icons.js?v=20261119z';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119za';
+import { Homey, forecast, geocode } from './api.js?v=20261119za';
+import { icon, TABS } from './icons.js?v=20261119za';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -796,11 +796,11 @@ function viewConso() {
   const lignes = [...appareils, ...(reste != null && reste >= 20 ? [{ nom: 'Reste de la maison', w: reste, piece: 'non mesuré', autre: true }] : [])];
   const wmax = Math.max(1, ...lignes.map((x) => x.w));
   const inst = `<div class="card"><div class="section-head"><h2>En ce moment, par appareil</h2><span class="tag accent">Maison ${maison != null ? watts(maison) : '–'}</span></div>
-    ${lignes.length ? `<div class="hbars">${lignes.map((x) => `<div class="hb ${x.autre ? 'autre' : ''} ${x.id && x.id === cd.id ? 'sel' : ''}" ${x.id ? `data-act="cdev" data-id="${x.id}"` : ''}><div class="hb-nm">${esc(x.nom)}<small>${esc(x.piece || '')}</small></div>
+    ${lignes.length ? `<div class="hbars">${lignes.map((x) => `<div class="hb ${x.autre ? 'autre' : ''}"><div class="hb-nm">${esc(x.nom)}<small>${esc(x.piece || '')}</small></div>
       <div class="hb-track"><i style="width:${Math.max(1.5, (x.w / wmax) * 100).toFixed(1)}%"></i></div><b>${watts(x.w)}</b></div>`).join('')}</div>` : '<p class="muted">Aucun appareil mesuré ne consomme en ce moment.</p>'}
     <p class="small muted" style="margin:10px 0 0">Mis à jour toutes les 5 secondes. « Maison » = achat réseau + production solaire utilisée. « Reste » = ce qui n’est pas mesuré par une prise.</p></div>`;
 
-  return `<h1>Consommation</h1><div class="cgrid">${top}${inst}${carteAppareil()}${hist}</div>`;
+  return `<h1>Consommation</h1><div class="cgrid">${top}${inst}${hist}${zonesAppareils()}</div>`;
 }
 
 /* ---------- Courbe par appareil : direct, jour, mois, année ---------- */
@@ -825,13 +825,15 @@ function liveSample() {
   });
 }
 
-const cd = { id: store.get('consoDev', null), vue: store.get('consoDevVue', 'jour'), cache: {}, busy: false };
+const cd = { cache: {}, busy: false };
 const RES = { jour: 'today', mois: 'thisMonth', annee: 'thisYear' };
 
+const cdFile = new Set();
 async function chargeAppareil(id, vue) {
   const key = `${id}|${vue}`;
   const c = cd.cache[key];
-  if (vue === 'direct' || cd.busy || (c && Date.now() - c.at < 5 * 60e3)) return;
+  if (vue === 'direct' || (c && Date.now() - c.at < 5 * 60e3)) return;
+  if (cd.busy) { cdFile.add(key); return; }
   cd.busy = true;
   try {
     let pts = null;
@@ -841,7 +843,10 @@ async function chargeAppareil(id, vue) {
     cd.cache[key] = { at: Date.now(), pts: pts || [], kwhPts: kwhPts || [] };
   } catch { cd.cache[key] = { at: Date.now(), pts: [], kwhPts: [] }; }
   cd.busy = false;
-  maybeRender();
+  cdFile.delete(key);
+  const suivant = cdFile.values().next().value;
+  if (suivant) { const [i, v] = suivant.split('|'); cdFile.delete(suivant); chargeAppareil(i, v); }
+  else maybeRender();
 }
 
 function lineSVG(pts, { t0, t1, h = 180, ticks = [] }) {
@@ -861,48 +866,60 @@ function lineSVG(pts, { t0, t1, h = 180, ticks = [] }) {
     <div class="cb-lbls edge">${ticks.map((tk) => `<span style="left:${((tk.t - t0) / span * 100).toFixed(2)}%">${esc(tk.l)}</span>`).join('')}</div>`;
 }
 
-function carteAppareil() {
-  const liste = appareilsMesures();
-  if (!liste.length) return '';
-  if (!cd.id || !liste.some((x) => x.id === cd.id)) cd.id = liste[0].id;
-  const sel = liste.find((x) => x.id === cd.id);
+// Onglet choisi pour chaque tuile (retenu sur l'iPad)
+const cdVues = store.get('consoTuiles', {});
+
+function calculPeriode(id, vue) {
   const now = Date.now();
   const d0 = new Date(); d0.setHours(0, 0, 0, 0);
-  let pts = [], t0, t1 = now, ticks = [];
-  if (cd.vue === 'direct') {
-    pts = direct[cd.id] || []; t0 = now - 20 * 60e3;
-    ticks = [20, 15, 10, 5, 0].map((m) => ({ t: now - m * 60e3, l: m ? `-${m} min` : 'maintenant' }));
+  let pts, t0, t1 = now, ticks = [];
+  if (vue === 'direct') {
+    pts = direct[id] || []; t0 = now - 20 * 60e3;
+    ticks = [{ t: t0, l: '-20 min' }, { t: now - 10 * 60e3, l: '-10' }, { t: now, l: 'maint.' }];
   } else {
-    chargeAppareil(cd.id, cd.vue);
-    const c = cd.cache[`${cd.id}|${cd.vue}`];
+    chargeAppareil(id, vue);
+    const c = cd.cache[`${id}|${vue}`];
     pts = c ? c.pts : null;
-    if (cd.vue === 'jour') { t0 = d0.getTime(); t1 = t0 + 864e5; ticks = [0, 6, 12, 18, 24].map((hh) => ({ t: t0 + hh * 36e5, l: `${hh} h` })); }
-    else if (cd.vue === 'mois') { const m0 = new Date(d0.getFullYear(), d0.getMonth(), 1); const m1 = new Date(d0.getFullYear(), d0.getMonth() + 1, 1); t0 = m0.getTime(); t1 = m1.getTime(); ticks = [1, 8, 15, 22, 29].filter((j) => j <= new Date(m1 - 1).getDate()).map((j) => ({ t: new Date(m0.getFullYear(), m0.getMonth(), j).getTime(), l: String(j) })); }
-    else { const y0 = new Date(d0.getFullYear(), 0, 1); t0 = y0.getTime(); t1 = new Date(d0.getFullYear() + 1, 0, 1).getTime(); ticks = [0, 2, 4, 6, 8, 10].map((m) => ({ t: new Date(d0.getFullYear(), m, 1).getTime(), l: MOIS[m].replace('.', '') })); }
-    if (!c) pts = null;
+    if (vue === 'jour') { t0 = d0.getTime(); t1 = t0 + 864e5; ticks = [0, 12, 24].map((hh) => ({ t: t0 + hh * 36e5, l: `${hh} h` })); }
+    else if (vue === 'mois') { const m0 = new Date(d0.getFullYear(), d0.getMonth(), 1); const m1 = new Date(d0.getFullYear(), d0.getMonth() + 1, 1); t0 = m0.getTime(); t1 = m1.getTime(); ticks = [{ t: t0, l: '1' }, { t: new Date(m0.getFullYear(), m0.getMonth(), 15).getTime(), l: '15' }, { t: t1, l: String(new Date(t1 - 1).getDate()) }]; }
+    else { t0 = new Date(d0.getFullYear(), 0, 1).getTime(); t1 = new Date(d0.getFullYear() + 1, 0, 1).getTime(); ticks = [{ t: t0, l: 'janv' }, { t: new Date(d0.getFullYear(), 6, 1).getTime(), l: 'juil' }, { t: t1, l: 'déc' }]; }
   }
-  // Calcul de la consommation sur la période : compteur kWh de l'appareil s'il existe, sinon puissance × temps
   let kwh = null;
-  const c = cd.cache[`${cd.id}|${cd.vue}`];
-  if (cd.vue !== 'direct' && c && c.kwhPts.length >= 2) kwh = Math.max(0, c.kwhPts[c.kwhPts.length - 1].v - c.kwhPts[0].v);
+  const c = cd.cache[`${id}|${vue}`];
+  if (vue !== 'direct' && c && c.kwhPts.length >= 2) kwh = Math.max(0, c.kwhPts[c.kwhPts.length - 1].v - c.kwhPts[0].v);
   if (kwh == null && pts && pts.length >= 2) { kwh = 0; for (let i = 1; i < pts.length; i++) kwh += ((pts[i - 1].v + pts[i].v) / 2) * ((pts[i].t - pts[i - 1].t) / 36e5) / 1000; }
   const pic = pts && pts.length ? Math.max(...pts.map((p) => p.v)) : null;
-  const dureeH = pts && pts.length >= 2 ? (pts[pts.length - 1].t - pts[0].t) / 36e5 : 0;
-  const moy = kwh != null && dureeH > 0 ? (kwh * 1000) / dureeH : null;
-  const seg = [['direct', 'Direct'], ['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => `<button class="${cd.vue === v ? 'on' : ''}" data-act="cdvue" data-v="${v}">${l}</button>`).join('');
-  const periode = { direct: '20 dernières minutes', jour: 'aujourd’hui', mois: 'ce mois-ci', annee: `en ${d0.getFullYear()}` }[cd.vue];
-  const chips = liste.map((x) => `<button class="chip ${x.id === cd.id ? 'on' : ''}" data-act="cdev" data-id="${x.id}">${esc(x.nom)}</button>`).join('');
-  return `<div class="card c-full"><div class="section-head"><h2>Par appareil · ${esc(sel.nom)}</h2><div class="seg">${seg}</div></div>
-    <div class="chips cd-chips">${chips}</div>
-    <div class="cd-kpis">
-      <div><span class="lbl">Maintenant</span><b>${watts(sel.w)}</b></div>
-      <div><span class="lbl">Consommé ${periode}</span><b>${kwh == null ? '–' : `${nf(kwh, kwh < 10 ? 2 : 1)}<span class="unit">kWh</span>`}</b><small>${kwh == null ? '' : `${nf(kwh * S.prixKwh, 2)} €`}</small></div>
-      <div><span class="lbl">Pic</span><b>${pic == null ? '–' : watts(pic)}</b></div>
-      <div><span class="lbl">Moyenne</span><b>${moy == null ? '–' : watts(moy)}</b></div>
-    </div>
-    ${pts === null ? '<p class="small muted" style="margin:30px 0">Chargement de l’historique…</p>' : lineSVG(pts, { t0, t1, ticks })}
-    ${cd.vue === 'direct' ? '<p class="small muted" style="margin:8px 0 0">Relevé toutes les 5 secondes depuis l’ouverture du dashboard.</p>' : ''}
+  return { pts, t0, t1, ticks, kwh, pic };
+}
+
+function tuileAppareil(x, cls) {
+  const vue = cdVues[x.id] || 'jour';
+  const r = calculPeriode(x.id, vue);
+  const seg = [['direct', 'Direct'], ['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => `<button class="${vue === v ? 'on' : ''}" data-act="ctvue" data-id="${x.id}" data-v="${v}">${l}</button>`).join('');
+  const periode = { direct: '20 min', jour: 'aujourd’hui', mois: 'ce mois', annee: 'cette année' }[vue];
+  return `<div class="card ctile ${cls} ${x.w >= 1 ? 'on' : ''}">
+    <div class="ct-head"><div class="ct-nm"><b>${esc(x.nom)}</b><small>${esc(x.piece || '')}</small></div><span class="ct-w">${watts(x.w)}</span></div>
+    <div class="seg ct-seg">${seg}</div>
+    ${r.pts === null ? '<p class="small muted ct-wait">Chargement…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84 })}
+    <div class="ct-foot"><span>${periode} : <b>${r.kwh == null ? '–' : `${nf(r.kwh, r.kwh < 10 ? 2 : 1)} kWh`}</b>${r.kwh == null ? '' : ` · ${nf(r.kwh * S.prixKwh, 2)} €`}</span><span class="muted">pic ${r.pic == null ? '–' : watts(r.pic)}</span></div>
   </div>`;
+}
+
+function zonesAppareils() {
+  const liste = appareilsMesures();
+  if (!liste.length) return '';
+  const groupes = { vie: [], nuit: [], autres: [] };
+  liste.forEach((x) => groupes[zoneDePiece(st.devices[x.id]?.zone)].push(x));
+  const ZONES = [['vie', 'Zone vie', 'z-vie'], ['nuit', 'Zone nuit', 'z-nuit'], ['autres', 'Extérieur et maison entière', 'z-autres']];
+  return `<div class="c-full"><div class="lzones">${ZONES.map(([k, titre, cls]) => {
+    const l = groupes[k];
+    if (!l.length) return '';
+    const w = l.reduce((t, x) => t + x.w, 0);
+    const ids = l.map((x) => x.id);
+    const par = Object.fromEntries(l.map((x) => [x.id, x]));
+    return `<section class="lzone ${cls}"><div class="lz-head"><div class="zb-title"><b>${titre}</b><span>${l.length} appareil${l.length > 1 ? 's' : ''} mesuré${l.length > 1 ? 's' : ''} · ${nf(w, 0)} W en ce moment</span></div></div>
+      ${colonnes(ids, () => 1, (id) => tuileAppareil(par[id], cls))}</section>`;
+  }).join('')}</div></div>`;
 }
 
 /* Éclairage et prises */
@@ -1134,8 +1151,7 @@ async function attendre(id, c, v, delai) {
   return false;
 }
 const actions = {
-  cdev({ id }) { cd.id = id; store.set('consoDev', id); render(); },
-  cdvue({ v }) { cd.vue = v; store.set('consoDevVue', v); render(); },
+  ctvue({ id, v }) { cdVues[id] = v; store.set('consoTuiles', cdVues); render(); },
   cvue({ v }) { cs.vue = v; cs.sel = null; store.set('consoVue', v); render(); },
   cbar({ i }) { cs.sel = cs.sel === +i ? null : +i; render(); },
   tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); },
