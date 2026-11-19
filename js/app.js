@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119x';
-import { Homey, forecast, geocode } from './api.js?v=20261119x';
-import { icon, TABS } from './icons.js?v=20261119x';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119y';
+import { Homey, forecast, geocode } from './api.js?v=20261119y';
+import { icon, TABS } from './icons.js?v=20261119y';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -232,7 +232,8 @@ function render() {
     v.innerHTML = `<div class="empty">${st.err ? 'Homey injoignable. Vérifie que l’iPad est sur le Wi-Fi de la maison, puis l’adresse dans les réglages.' : 'Connexion à la Homey…'}</div>`;
     return;
   }
-  const views = { accueil: viewHome, volets: viewBlinds, chauffage: viewHeat, energie: viewEnergy, eclairage: viewLights, prises: viewPlugs };
+  const views = { accueil: viewHome, volets: viewBlinds, chauffage: viewHeat, energie: viewEnergy, conso: viewConso, eclairage: viewLights, prises: viewPlugs };
+  if (st.tab === 'conso') refreshConso();
   try { v.innerHTML = (views[st.tab] || viewHome)(); }
   catch (e) { v.innerHTML = `<div class="empty">Erreur d’affichage : ${esc(e.message)}<br>Recharge la page (Cmd + Maj + R). Si ça persiste, envoie ce message.</div>`; console.error(e); return; }
   const fire = alerts().find((a) => a.fire);
@@ -659,6 +660,153 @@ function viewEnergy() {
   </div>`;
 }
 
+/* ---------- Consommation : historique jour / mois / année ---------- */
+// Source : index « énergie importée » du Linky (historique Homey), complété par une copie gardée
+// sur l'iPad pour ne rien perdre quand la Homey efface ses vieilles données.
+const histo = store.get('histo', { j: {}, m: {}, a: {} });
+const cs = { at: 0, busy: false, vue: store.get('consoVue', 'jours'), sel: null };
+const pad2 = (n) => String(n).padStart(2, '0');
+const cleJour = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const cleMois = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+async function refreshConso(force = false) {
+  if (!homey.ready || cs.busy || (!force && Date.now() - cs.at < 30 * 60e3)) return;
+  cs.busy = true; cs.at = Date.now();
+  try {
+    const L = C.energie.linky, cap0 = 'meter_power.imported';
+    const [court, long] = await Promise.all([homey.insights(L, cap0, 'last31Days'), homey.insights(L, cap0, 'last2Years')]);
+    const now = cap(L, cap0);
+    // index le plus proche d'un instant donné (les relevés sont espacés de quelques heures)
+    const idx = (pts, T) => { let b = null, d = Infinity; for (const p of pts) { const x = Math.abs(p.t - T); if (x < d) { d = x; b = p; } } return b && d < 3 * 864e5 ? b.v : null; };
+    const diff = (pts, a, b) => { const va = idx(pts, a); const vb = b > Date.now() - 6 * 36e5 && typeof now === 'number' ? now : idx(pts, b); return va != null && vb != null && vb >= va ? vb - va : null; };
+    const auj = new Date(); auj.setHours(0, 0, 0, 0);
+    if (court && court.length) {
+      for (let i = 31; i >= 1; i--) {
+        const d0 = new Date(auj); d0.setDate(d0.getDate() - i); const d1 = new Date(d0); d1.setDate(d1.getDate() + 1);
+        if (d0.getTime() < court[0].t - 6 * 36e5) continue;
+        const v = diff(court, d0.getTime(), d1.getTime()); if (v != null) histo.j[cleJour(d0)] = +v.toFixed(2);
+      }
+    }
+    const pts = [...(long || []), ...(court || [])].sort((a, b) => a.t - b.t);
+    if (pts.length) {
+      for (let k = 24; k >= 0; k--) {
+        const m0 = new Date(auj.getFullYear(), auj.getMonth() - k, 1); const m1 = new Date(m0.getFullYear(), m0.getMonth() + 1, 1);
+        if (m0.getTime() < pts[0].t - 2 * 864e5) continue; // pas d'historique aussi loin
+        const v = diff(pts, m0.getTime(), Math.min(m1.getTime(), Date.now())); if (v != null) histo.m[cleMois(m0)] = +v.toFixed(1);
+      }
+    }
+    // Compteurs remis à zéro par « Prix consommation » : les plus fiables pour le jour, le mois et l'année en cours
+    const k = (c) => cap(C.energie.compteur, c);
+    const hier = new Date(auj); hier.setDate(hier.getDate() - 1);
+    if (typeof k('meter_kwh_last_day') === 'number') histo.j[cleJour(hier)] = +k('meter_kwh_last_day').toFixed(2);
+    const mp = new Date(auj.getFullYear(), auj.getMonth() - 1, 1);
+    if (typeof k('meter_kwh_last_month') === 'number') histo.m[cleMois(mp)] = +k('meter_kwh_last_month').toFixed(1);
+    if (typeof k('meter_kwh_last_year') === 'number') histo.a[auj.getFullYear() - 1] = +k('meter_kwh_last_year').toFixed(0);
+    // années terminées : somme des mois connus si le compteur ne la donne pas
+    const ans = {}; Object.entries(histo.m).forEach(([cm, v]) => { const y = cm.slice(0, 4); ans[y] = (ans[y] || 0) + v; });
+    Object.entries(ans).forEach(([y, v]) => { if (+y < auj.getFullYear() && histo.a[y] == null) histo.a[y] = +v.toFixed(0); });
+    // on garde 400 jours
+    Object.keys(histo.j).sort().slice(0, -400).forEach((x) => delete histo.j[x]);
+    store.set('histo', histo);
+  } catch (e) { console.warn('conso', e); }
+  cs.busy = false;
+  maybeRender();
+}
+
+function barsSVG(items, { h = 170, sel = null, ghost = null } = {}) {
+  // items : [{ lbl, v, cur }] ; ghost : valeurs de comparaison (année précédente)
+  if (!items.some((x) => x.v != null)) return '<p class="small muted">Pas encore d’historique pour cette période. Il se remplit au fil des jours.</p>';
+  const W = 600, H = h, n = items.length, gap = n > 20 ? 3 : 8;
+  const vmax = Math.max(1, ...items.map((x) => x.v || 0), ...(ghost || []).map((v) => v || 0)) * 1.12;
+  const bw = (W - gap * (n - 1)) / n;
+  const Y = (v) => H - (v / vmax) * (H - 6);
+  const bars = items.map((x, i) => {
+    const X = i * (bw + gap);
+    const g = ghost && ghost[i] != null ? `<rect x="${(X + bw * 0.18).toFixed(1)}" y="${Y(ghost[i]).toFixed(1)}" width="${(bw * 0.64).toFixed(1)}" height="${(H - Y(ghost[i])).toFixed(1)}" rx="2" class="cb-ghost"/>` : '';
+    const b = x.v != null ? `<rect x="${X.toFixed(1)}" y="${Y(x.v).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1.5, H - Y(x.v)).toFixed(1)}" rx="${Math.min(4, bw / 3).toFixed(1)}" class="cb ${x.cur ? 'cur' : ''} ${sel === i ? 'sel' : ''}"/>` : '';
+    return `<g data-act="cbar" data-i="${i}">${g}${b}<rect x="${X.toFixed(1)}" y="0" width="${(bw + gap).toFixed(1)}" height="${H}" fill="transparent"/></g>`;
+  }).join('');
+  const step = n > 20 ? 5 : 1;
+  const lbls = items.map((x, i) => `<span style="left:${(((i * (bw + gap)) + bw / 2) / W * 100).toFixed(2)}%">${i % step === 0 || i === n - 1 ? esc(x.lbl) : ''}</span>`).join('');
+  return `<svg class="cbars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">${bars}</svg><div class="cb-lbls">${lbls}</div>`;
+}
+
+function viewConso() {
+  const k = (c) => cap(C.energie.compteur, c);
+  const e = energyNow();
+  const prix = S.prixKwh;
+  const now = new Date();
+  const eur = (kwh) => (kwh == null ? '–' : `${nf(kwh * prix, 2)} €`);
+  const kpi = (lbl, kwh, sub) => `<div class="kpi"><div class="lbl">${lbl}</div><div class="val">${nf(kwh, kwh != null && kwh < 100 ? 1 : 0)}<span class="unit">kWh</span></div><div class="small muted">${eur(kwh)}${sub ? ' · ' + sub : ''}</div></div>`;
+  const anNb = now.getFullYear();
+  // Année en cours : le compteur « Prix consommation » a pu démarrer en cours d'année,
+  // on prend le plus grand entre lui et la somme des mois connus par l'index Linky
+  const sommeMois = Object.entries(histo.m).filter(([cm]) => cm.startsWith(`${anNb}-`) && cm !== cleMois(now)).reduce((t, [, v]) => t + v, 0) + (k('meter_kwh_this_month') || 0);
+  const anKwh = Math.max(k('meter_kwh_this_year') || 0, sommeMois) || null;
+  const top = `<div class="card"><div class="section-head"><h2>Achat au réseau</h2><span class="tag">remise à zéro le 1er janvier</span></div>
+    <div class="kpis kpis4">
+      ${kpi('Aujourd’hui', k('meter_kwh_this_day'), `hier ${nf(k('meter_kwh_last_day'), 1)} kWh`)}
+      ${kpi('Ce mois-ci', k('meter_kwh_this_month'), `${MOIS[(now.getMonth() + 11) % 12]} ${nf(k('meter_kwh_last_month'), 0)} kWh`)}
+      ${kpi(`Année ${anNb}`, anKwh, histo.a[anNb - 1] != null ? `${anNb - 1} : ${nf(histo.a[anNb - 1], 0)} kWh` : '')}
+    </div>
+    <p class="small muted" style="margin:10px 0 0">Coût hors abonnement, au tarif de ${nf(prix, 4)} €/kWh. Abonnement : ${nf(S.aboMois, 2)} €/mois.</p></div>`;
+
+  // Historique
+  let items = [], ghost = null, titre = '', total = null;
+  if (cs.vue === 'jours') {
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+      const v = i === 0 ? k('meter_kwh_this_day') : histo.j[cleJour(d)];
+      items.push({ lbl: String(d.getDate()), v: typeof v === 'number' ? v : null, cur: i === 0, long: d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) });
+    }
+    titre = '30 derniers jours';
+  } else if (cs.vue === 'mois') {
+    for (let m = 0; m < 12; m++) {
+      const cm = `${anNb}-${pad2(m + 1)}`;
+      const v = m === now.getMonth() ? k('meter_kwh_this_month') ?? histo.m[cm] : m < now.getMonth() ? histo.m[cm] : null;
+      items.push({ lbl: MOIS[m].replace('.', ''), v: typeof v === 'number' ? v : null, cur: m === now.getMonth(), long: `${MOIS[m]} ${anNb}` });
+    }
+    ghost = Array.from({ length: 12 }, (_, m) => histo.m[`${anNb - 1}-${pad2(m + 1)}`] ?? null);
+    titre = `Mois de ${anNb}`;
+  } else {
+    const ys = Object.keys(histo.a).map(Number).filter((y) => y < anNb);
+    const y0 = Math.min(anNb - 2, ...ys);
+    for (let y = y0; y <= anNb; y++) {
+      const v = y === anNb ? anKwh : histo.a[y];
+      items.push({ lbl: String(y), v: typeof v === 'number' ? v : null, cur: y === anNb, long: y === anNb ? `${y} (en cours)` : String(y) });
+    }
+    titre = 'Par année';
+  }
+  total = items.reduce((t, x) => t + (x.v || 0), 0);
+  const sel = cs.sel != null && items[cs.sel]?.v != null ? items[cs.sel] : null;
+  const info = sel ? `<b>${esc(sel.long)}</b> · ${nf(sel.v, sel.v < 100 ? 1 : 0)} kWh · ${eur(sel.v)}` : `Total affiché : <b>${nf(total, 0)} kWh</b> · ${eur(total)} <span class="muted">· touche une barre pour le détail</span>`;
+  const seg = [['jours', 'Jours'], ['mois', 'Mois'], ['annees', 'Années']].map(([v, l]) => `<button class="${cs.vue === v ? 'on' : ''}" data-act="cvue" data-v="${v}">${l}</button>`).join('');
+  const hist = `<div class="card c-full"><div class="section-head"><h2>Historique · ${titre}</h2><div class="seg">${seg}</div></div>
+    ${barsSVG(items, { sel: cs.sel, ghost })}
+    <div class="c-info">${info}</div>
+    ${ghost ? `<div class="legend"><span><i style="background:var(--accent)"></i>${anNb}</span><span><i class="lg-ghost"></i>${anNb - 1}</span></div>` : ''}</div>`;
+
+  // Consommation instantanée par appareil
+  const appareils = Object.values(st.devices)
+    .filter((d) => typeof d.capabilitiesObj?.measure_power?.value === 'number' && ![C.energie.linky, C.energie.solaire, C.energie.compteur, C.portail.relais].includes(d.id) && d.class !== 'solarpanel' && !C.exclureZones.includes(d.zone))
+    .filter((d) => !C.exclureAppareils.includes(d.id) || C.consoInclure?.includes(d.id))
+    .map((d) => ({ id: d.id, nom: d.id === C.consoGainable ? 'Gainable (estimé)' : nm(d.id), w: d.capabilitiesObj.measure_power.value, piece: zoneName(d.zone) }))
+    .filter((x) => x.w >= 1)
+    .sort((a, b) => b.w - a.w);
+  const mesure = appareils.reduce((t, x) => t + x.w, 0);
+  const maison = e.conso;
+  const reste = maison != null ? Math.max(0, maison - mesure) : null;
+  const lignes = [...appareils, ...(reste != null && reste >= 20 ? [{ nom: 'Reste de la maison', w: reste, piece: 'non mesuré', autre: true }] : [])];
+  const wmax = Math.max(1, ...lignes.map((x) => x.w));
+  const inst = `<div class="card"><div class="section-head"><h2>En ce moment, par appareil</h2><span class="tag accent">Maison ${maison != null ? watts(maison) : '–'}</span></div>
+    ${lignes.length ? `<div class="hbars">${lignes.map((x) => `<div class="hb ${x.autre ? 'autre' : ''}"><div class="hb-nm">${esc(x.nom)}<small>${esc(x.piece || '')}</small></div>
+      <div class="hb-track"><i style="width:${Math.max(1.5, (x.w / wmax) * 100).toFixed(1)}%"></i></div><b>${watts(x.w)}</b></div>`).join('')}</div>` : '<p class="muted">Aucun appareil mesuré ne consomme en ce moment.</p>'}
+    <p class="small muted" style="margin:10px 0 0">Mis à jour toutes les 5 secondes. « Maison » = achat réseau + production solaire utilisée. « Reste » = ce qui n’est pas mesuré par une prise.</p></div>`;
+
+  return `<h1>Consommation</h1><div class="cgrid">${top}${inst}${hist}</div>`;
+}
+
 /* Éclairage et prises */
 function byZone(list) {
   const groups = {};
@@ -888,6 +1036,8 @@ async function attendre(id, c, v, delai) {
   return false;
 }
 const actions = {
+  cvue({ v }) { cs.vue = v; cs.sel = null; store.set('consoVue', v); render(); },
+  cbar({ i }) { cs.sel = cs.sel === +i ? null : +i; render(); },
   tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); },
   settings() { openSettings(); },
   async blind({ id, v }) {

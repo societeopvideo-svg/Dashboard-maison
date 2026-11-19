@@ -23,6 +23,11 @@ const ICONS = {
     body: '<path d="M13.2 2.8 5 13.6h6.1l-.9 7.6 8.3-10.9h-6.2z"/>',
     detail: '',
   },
+  conso: {
+    color: '#8FC1A0',
+    body: '<rect x="4" y="12" width="4" height="8.5" rx="1"/><rect x="10" y="7" width="4" height="13.5" rx="1"/><rect x="16" y="3.5" width="4" height="17" rx="1"/>',
+    detail: '',
+  },
   ampoule: {
     color: '#F3D27A',
     body: '<path d="M12 3a6.2 6.2 0 0 0-3.7 11.2c.7.5 1.1 1.3 1.1 2.1v.7h5.2v-.7c0-.8.4-1.6 1.1-2.1A6.2 6.2 0 0 0 12 3z"/>',
@@ -55,6 +60,7 @@ export const TABS = [
   { id: 'volets', icon: 'volet', label: 'Volets' },
   { id: 'chauffage', icon: 'radiateur', label: 'Chauffage' },
   { id: 'energie', icon: 'energie', label: 'Énergie' },
+  { id: 'conso', icon: 'conso', label: 'Consommation' },
   { id: 'eclairage', icon: 'ampoule', label: 'Éclairage' },
   { id: 'prises', icon: 'prise', label: 'Prises' },
 ];

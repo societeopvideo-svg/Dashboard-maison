@@ -96,6 +96,10 @@ export const CONFIG = {
     '26175f79-5b72-4856-852c-eef6e6ad060c',
   ],
 
+  // Page Consommation : le gainable est estimé par un appareil virtuel (masqué ailleurs)
+  consoGainable: '26175f79-5b72-4856-852c-eef6e6ad060c',
+  consoInclure: ['26175f79-5b72-4856-852c-eef6e6ad060c'],
+
   // Pièces masquées sur la page Éclairage
   eclairageExclureZones: ['121d71a3-6e2b-4e1f-8b95-5f5e7ebc5cf4'], // Spare
 
