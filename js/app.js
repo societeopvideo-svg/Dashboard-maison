@@ -342,11 +342,56 @@ function findUser(devId, userId) {
   }) || null;
 }
 
-function cardPresence() {
-  const vide = nobodyHome();
-  return `<div class="card"><h2>Présence</h2>
-    <div class="people">${C.presence.map(avatarHTML).join('')}</div>
-    ${vide ? '<p class="people-note" style="margin:14px 0 0">Maison vide</p>' : ''}
+function cardsPresence() {
+  return C.presence.map((id) => `<div class="card person">${avatarHTML(id)}</div>`).join('');
+}
+
+/* Caméras : dernière image transmise à Homey */
+const camImg = {}; // id -> { url, at, err }
+function camImagePath(id) {
+  const imgs = dev(id)?.images;
+  if (!Array.isArray(imgs) || !imgs.length) return null;
+  const o = imgs[0].imageObj || imgs[0];
+  return o?.url ? { url: o.url, at: o.lastUpdated ? new Date(o.lastUpdated).getTime() : null } : null;
+}
+async function refreshCameras(force = false) {
+  if (!homey.ready) return;
+  await Promise.all(C.cameras.map(async (id) => {
+    const p = camImagePath(id);
+    const cur = camImg[id];
+    if (!p) { camImg[id] = { err: 'none' }; return; }
+    if (!force && cur?.url && cur.at === p.at && Date.now() - (cur.fetched || 0) < 60e3) return;
+    try {
+      const url = await homey.imageURL(p.url);
+      if (cur?.url) URL.revokeObjectURL(cur.url);
+      camImg[id] = { url, at: p.at, fetched: Date.now() };
+    } catch { camImg[id] = { ...(cur || {}), err: 'load' }; }
+  }));
+  maybeRender();
+}
+const hhmm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+function cardCameras() {
+  const tiles = C.cameras.filter((id) => dev(id)).map((id) => {
+    const im = camImg[id] || {};
+    const motion = cap(id, 'alarm_motion') === true;
+    const bat = cap(id, 'measure_battery');
+    const body = im.url
+      ? `<img src="${im.url}" alt="">`
+      : `<div class="cam-empty">${im.err === 'none' ? 'Pas d’image transmise à Homey' : im.err ? 'Image indisponible' : 'Chargement…'}</div>`;
+    return `<button class="cam ${motion ? 'motion' : ''}" data-act="cam" data-id="${id}">
+      ${body}
+      <span class="cam-info"><span>${esc(nm(id))}</span><span>${motion ? '<b class="tag warn">Mouvement</b> ' : ''}${typeof bat === 'number' ? bat + ' %' : ''}${im.at ? ' · ' + hhmm(im.at) : ''}</span></span>
+    </button>`;
+  }).join('');
+  return tiles ? `<div class="card span-2"><h2>Caméras</h2><div class="cams">${tiles}</div></div>` : '';
+}
+
+function cardLightsSummary() {
+  const lights = visible().filter((d) => d.class === 'light' && has(d.id, 'onoff'));
+  const on = lights.filter((d) => cap(d.id, 'onoff') === true).length;
+  return `<div class="card tap ${on ? 'glow' : ''}" data-act="tab" data-id="eclairage"><h2>Lumière</h2>
+    <div class="row between"><div class="mid">${on}<span class="unit">allumée${on > 1 ? 's' : ''}</span></div><div class="mid">${lights.length - on}<span class="unit">éteinte${lights.length - on > 1 ? 's' : ''}</span></div></div>
   </div>`;
 }
 
@@ -368,7 +413,8 @@ function cardAlerts(list) {
 }
 
 function viewHome() {
-  return `<div class="grid">${cardAlerts(alerts())}${cardWeather()}${cardComfort()}${cardEnergy()}${cardPresence()}${cardBlindsSummary()}</div>`;
+  return `<div class="home-top">${cardsPresence()}${cardWeather()}</div>
+  <div class="grid">${cardAlerts(alerts())}${cardComfort()}${cardEnergy()}${cardCameras()}<div class="stack-col">${cardBlindsSummary()}${cardLightsSummary()}</div></div>`;
 }
 
 /* Volets */
@@ -576,6 +622,15 @@ const actions = {
   zpower({ id }) { send(id, 'onoff', cap(id, 'onoff') === false).catch(() => {}); },
   onoff({ id }) { send(id, 'onoff', !cap(id, 'onoff')).catch(() => {}); },
   zoneoff({ ids }) { ids.split(',').forEach((id) => { if (cap(id, 'onoff')) send(id, 'onoff', false).catch(() => {}); }); },
+  async cam({ id }) {
+    await refreshCameras(true);
+    const im = camImg[id] || {};
+    openSheet(`<div class="row between"><h3>${esc(nm(id))}</h3><button class="btn sm ghost" data-x="close">Fermer</button></div>
+      ${im.url ? `<img class="cam-big" src="${im.url}" alt="">` : '<p>Pas d’image disponible pour cette caméra.</p>'}
+      <p class="small">${im.at ? 'Image de ' + hhmm(im.at) + '. ' : ''}Homey reçoit une image fixe, pas la vidéo en direct : pour le direct, ouvre l’app Arlo.</p>`, (el) => {
+      el.addEventListener('click', (e) => { if (e.target.closest('[data-x="close"]')) { e.stopPropagation(); closeSheet(); } });
+    });
+  },
   async plug({ id }) {
     const on = cap(id, 'onoff') === true;
     if (on && C.prisesProtegees.includes(id)) {
@@ -752,7 +807,7 @@ async function openSettings() {
       ${S.reveil ? `<div class="field"><label>Détecteur de mouvement</label><select data-s="reveilCapteur"><option value="">Choisir…</option>${motion.map((d) => `<option value="${d.id}" ${S.reveilCapteur === d.id ? 'selected' : ''}>${esc(nm(d.id))}</option>`).join('')}</select><span class="hint">Jamais la caméra de l’iPad.</span></div>` : ''}
     </div>
 
-    <div class="set-group"><h4>Présence</h4><p class="small" style="margin-top:0">Les photos restent sur cet iPad.</p></div>${av}
+    <div class="set-group"><h4>Présence</h4><p class="small" style="margin-top:0">Les photos restent sur cet iPad. Anneau en couleur : présent ; gris : absent.</p>${users.length ? '' : '<p class="small" style="color:var(--warn)">La Homey ne donne pas la liste des comptes : la clé API n’a sans doute pas le droit « Utilisateurs : voir ». Sans lui, les avatars Homey ne peuvent pas s’afficher (tu peux quand même mettre une photo).</p>'}</div>${av}
 
     <div class="set-group"><h4>Verrou des réglages</h4>
       ${lock.hash ? '' : '<p class="small" style="color:var(--warn);margin-top:0">Aucun code pour l’instant : choisis-en un pour protéger les réglages.</p>'}
@@ -868,10 +923,10 @@ function wakeOnMotion() { if (S.reveil && S.reveilCapteur && cap(S.reveilCapteur
 $('#btn-settings').addEventListener('click', () => openSettings());
 tick(); setInterval(tick, 10e3);
 render();
-refresh().then(() => { refreshSlow(); refreshCurve(true); });
+refresh().then(() => { refreshSlow(); refreshCurve(true); refreshCameras(true); });
 refreshWeather(true);
 setInterval(refresh, 5e3);
 setInterval(refreshSlow, 10 * 60e3);
-setInterval(() => { refreshWeather(); refreshCurve(); }, 60e3);
+setInterval(() => { refreshWeather(); refreshCurve(); refreshCameras(); }, 60e3);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); refreshWeather(); refreshCurve(true); } });
 armSleep();
