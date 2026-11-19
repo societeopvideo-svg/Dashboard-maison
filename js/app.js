@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119w';
-import { Homey, forecast, geocode } from './api.js?v=20261119w';
-import { icon, TABS } from './icons.js?v=20261119w';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261119x';
+import { Homey, forecast, geocode } from './api.js?v=20261119x';
+import { icon, TABS } from './icons.js?v=20261119x';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -678,6 +678,14 @@ function zoneDePiece(zoneId) {
   return 'autres';
 }
 
+// Répartit les tuiles de pièce en deux colonnes de hauteur proche (l'ordre importe peu)
+function colonnes(zids, poids, html) {
+  if (zids.length < 2) return `<div class="lcols one"><div class="lcol">${zids.map(html).join('')}</div></div>`;
+  const cols = [[], []], h = [0, 0];
+  [...zids].sort((a, b) => poids(b) - poids(a)).forEach((z) => { const i = h[0] <= h[1] ? 0 : 1; cols[i].push(z); h[i] += poids(z); });
+  return `<div class="lcols">${cols.map((c) => `<div class="lcol">${c.map(html).join('')}</div>`).join('')}</div>`;
+}
+
 function viewLights() {
   const lights = visible().filter((d) => d.class === 'light' && has(d.id, 'onoff') && !(C.eclairageExclureZones || []).includes(d.zone));
   if (!lights.length) return '<h1>Éclairage</h1><div class="empty">Aucun éclairage trouvé.</div>';
@@ -710,7 +718,7 @@ function viewLights() {
     const nbOn = all.filter(lampOn).length;
     return `<section class="lzone ${cls}"><div class="lz-head"><div class="zb-title"><b>${titre}</b><span>${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${all.length}` : 'tout est éteint'}</span></div>
       ${nbOn && btnZone ? `<button class="btn sm" data-act="zonelights" data-ids="${all.filter(lampOn).map((d) => d.id).join(',')}" data-v="off" style="margin-left:auto">Tout éteindre</button>` : ''}</div>
-      <div class="lcards">${zids.map((zid) => card(zid, pieces[zid], cls)).join('')}</div></section>`;
+      ${colonnes(zids, (zid) => 1.6 + pieces[zid].reduce((t, d) => t + (lampOn(d) && has(d.id, 'dim') ? 1.9 : 1), 0), (zid) => card(zid, pieces[zid], cls))}</section>`;
   }).join('')}</div>`;
 }
 
@@ -722,16 +730,7 @@ function viewPlugs() {
   const pieces = {};
   plugs.forEach((d) => { (pieces[d.zone] = pieces[d.zone] || []).push(d); });
   const card = (zid, list, cls) => {
-    const nbOn = list.filter(plugOn).length;
-    // « Tout couper » ne touche pas aux prises protégées (elles se coupent une par une, avec confirmation)
-    const aCouper = list.filter((d) => plugOn(d) && !prot(d)).map((d) => d.id).join(',');
-    const aAllumer = list.filter((d) => !plugOn(d)).map((d) => d.id).join(',');
-    let btn = '';
-    if (list.length > 1) {
-      if (nbOn && aCouper) btn = `<button class="btn sm lampbtn on" data-act="zonelights" data-ids="${aCouper}" data-v="off">Tout couper</button>`;
-      else if (!nbOn) btn = `<button class="btn sm lampbtn" data-act="zonelights" data-ids="${aAllumer}" data-v="on">Tout allumer</button>`;
-    }
-    return `<div class="card lamps ${cls}"><div class="section-head"><h2>${esc(zoneName(zid) || 'Maison')}</h2>${btn}</div>
+    return `<div class="card lamps ${cls}"><div class="section-head"><h2>${esc(zoneName(zid) || 'Maison')}</h2></div>
       ${list.map((d) => {
         const on = plugOn(d);
         const inj = estInjoignable(d);
@@ -750,7 +749,7 @@ function viewPlugs() {
     const nbOn = all.filter(plugOn).length;
     const w = all.reduce((t, d) => t + (plugOn(d) && typeof cap(d.id, 'measure_power') === 'number' ? cap(d.id, 'measure_power') : 0), 0);
     return `<section class="lzone ${cls}"><div class="lz-head"><div class="zb-title"><b>${titre}</b><span>${nbOn ? `${nbOn} allumée${nbOn > 1 ? 's' : ''} sur ${all.length}${w >= 1 ? ` · ${nf(w, 0)} W` : ''}` : 'tout est coupé'}</span></div></div>
-      <div class="lcards">${zids.map((zid) => card(zid, pieces[zid], cls)).join('')}</div></section>`;
+      ${colonnes(zids, (zid) => 1.4 + pieces[zid].length, (zid) => card(zid, pieces[zid], cls))}</section>`;
   }).join('')}</div>`;
 }
 

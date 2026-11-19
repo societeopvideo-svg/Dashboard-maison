@@ -483,3 +483,12 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .lz-head .btn { padding: 5px 12px; font-size: 12px; min-height: 0; background: rgba(255, 255, 255, .6); color: var(--zink); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lz-head .btn { background: rgba(255, 255, 255, .08); } }
 .lzone .card.lamps { box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
+
+/* Zones symétriques : cadres de même hauteur, deux colonnes de tuiles qui finissent alignées */
+.lzones { align-items: stretch; }
+.lzone { display: flex; flex-direction: column; }
+.lcols { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.lcols.one { grid-template-columns: 1fr; }
+.lcol { display: flex; flex-direction: column; gap: 10px; }
+.lcol > .card.lamps { align-self: stretch; }
+.lcol > .card.lamps:last-child { flex: 1; }
