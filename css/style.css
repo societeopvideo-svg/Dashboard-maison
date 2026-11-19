@@ -470,3 +470,16 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .lamp2 .dim { width: 100%; margin: 6px 0 2px; display: block; }
 .lamp2.off-line .nm div:first-child { opacity: .55; }
 .lzone .zone-bar .btn { padding: 5px 12px; font-size: 12px; min-height: 0; }
+
+/* Éclairage : un cadre de couleur par zone, les tuiles de pièce dedans */
+.lzone { border-radius: 22px; padding: 14px; }
+.lzone.z-vie { background: var(--z-vie); --zink: var(--z-vie-ink); }
+.lzone.z-nuit { background: var(--z-nuit); --zink: var(--z-nuit-ink); }
+.lzone.z-autres { background: var(--z-autres); --zink: var(--z-autres-ink); }
+.lz-head { display: flex; align-items: center; gap: 12px; padding: 0 4px 12px; color: var(--zink); min-height: 34px; }
+.lz-head .zb-title { display: flex; flex-direction: column; }
+.lz-head .zb-title b { font-size: 15px; font-weight: 600; }
+.lz-head .zb-title span { font-size: 12px; opacity: .8; }
+.lz-head .btn { padding: 5px 12px; font-size: 12px; min-height: 0; background: rgba(255, 255, 255, .6); color: var(--zink); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lz-head .btn { background: rgba(255, 255, 255, .08); } }
+.lzone .card.lamps { box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }

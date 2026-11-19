@@ -92,6 +92,9 @@ export const CONFIG = {
     '26175f79-5b72-4856-852c-eef6e6ad060c',
   ],
 
+  // Pièces masquées sur la page Éclairage
+  eclairageExclureZones: ['121d71a3-6e2b-4e1f-8b95-5f5e7ebc5cf4'], // Spare
+
   // Prises à confirmer avant de couper
   prisesProtegees: [
     '80c2702f-cebb-4e98-8736-c78e701590ce',
