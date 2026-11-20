@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120a';
-import { Homey, forecast, geocode, actualites } from './api.js?v=20261120a';
-import { icon, TABS } from './icons.js?v=20261120a';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120b';
+import { Homey, forecast, geocode, actualites } from './api.js?v=20261120b';
+import { icon, TABS } from './icons.js?v=20261120b';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -185,6 +185,36 @@ function trackGarage() {
   store.set('garageSince', st.garageSince);
 }
 
+/* Mise à jour sans clignotement : on compare la nouvelle page à l'ancienne et on ne touche
+   qu'aux éléments qui changent. Une image dont l'adresse ne change pas n'est jamais recréée. */
+let derniereVue = '';
+function majDOM(cible, html) {
+  if (html === derniereVue && cible.childNodes.length) return;
+  derniereVue = html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  fusion(cible, tpl.content);
+}
+function fusion(ancien, nouveau) {
+  const a = [...ancien.childNodes], n = [...nouveau.childNodes];
+  for (let i = 0; i < n.length; i++) {
+    const x = a[i], y = n[i];
+    if (!x) { ancien.appendChild(y); continue; }
+    if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName) { ancien.replaceChild(y, x); continue; }
+    if (x.nodeType === 3 || x.nodeType === 8) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+    if (x.nodeType !== 1) continue;
+    // attributs
+    for (const at of [...x.attributes]) if (!y.hasAttribute(at.name)) x.removeAttribute(at.name);
+    for (const at of [...y.attributes]) if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
+    // valeur des curseurs et champs (la propriété ne suit pas toujours l'attribut)
+    if ((x.nodeName === 'INPUT' || x.nodeName === 'SELECT') && document.activeElement !== x && 'value' in y && x.value !== y.value) x.value = y.value;
+    if (x.nodeName === 'IMG' || x.nodeName === 'VIDEO') continue; // jamais recréer une image
+    fusion(x, y);
+  }
+  // éléments en trop
+  for (let i = a.length - 1; i >= n.length; i--) if (a[i].parentNode === ancien) ancien.removeChild(a[i]);
+}
+
 function maybeRender() {
   if (st.sheet || Date.now() - st.lastTouch < 3500) return;
   render();
@@ -256,7 +286,7 @@ function render() {
   }
   const views = { accueil: viewHome, volets: viewBlinds, chauffage: viewHeat, energie: viewEnergy, conso: viewConso, eclairage: viewLights, prises: viewPlugs };
   if (st.tab === 'conso') refreshConso();
-  try { v.innerHTML = (views[st.tab] || viewHome)(); }
+  try { majDOM(v, (views[st.tab] || viewHome)()); }
   catch (e) { v.innerHTML = `<div class="empty">Erreur d’affichage : ${esc(e.message)}<br>Recharge la page (Cmd + Maj + R). Si ça persiste, envoie ce message.</div>`; console.error(e); return; }
   const fire = alerts().find((a) => a.fire);
   let f = $('#fire');
@@ -400,7 +430,9 @@ function enSoiree(a, d = new Date()) {
   return de < fin ? n >= de && n < fin : n >= de || n < fin;
 }
 // Une image qui ne se charge pas passe à la suivante de sa liste, puis disparaît (l'initiale reste)
+const avIntrouvables = new Set();
 window.avSuivant = (img) => {
+  avIntrouvables.add(img.getAttribute('src'));
   // quand les images « sortie » sont épuisées, l'avatar de repli reprend le style normal (gris si absent)
   const n = +(img.dataset.sortie || 0);
   if (n > 0) { img.dataset.sortie = n - 1; if (n - 1 === 0) img.parentElement?.classList.remove('sortie'); }
@@ -417,20 +449,22 @@ function avatarHTML(devId, cls = '') {
   // (img/avatars/<nom>-<saison>.png ou .jpg), puis photo choisie, puis avatar Homey
   const sz = saison();
   const sources = [];
+  // on saute les images déjà reconnues introuvables (sinon elles sont recherchées à chaque mise à jour)
+  const ajoute = (...l) => l.forEach((u) => { if (u && !avIntrouvables.has(u)) sources.push(u); });
   const cle = C.avatarsFichiers?.[devId];
   // Priorité : « Sortir » quand la personne est absente, sinon « Soirée » dans la plage horaire, sinon la saison
   const absent = cap(devId, 'presence') === false;
   const special = absent ? 'sortie' : enSoiree(a) ? 'soiree' : null;
   if (special) {
-    if (a.saisons?.[special]) sources.push(a.saisons[special]);
-    if (cle) sources.push(`img/avatars/${cle}-${special}.png`, `img/avatars/${cle}-${special}.jpg`);
+    ajoute(a.saisons?.[special]);
+    if (cle) ajoute(`img/avatars/${cle}-${special}.png`, `img/avatars/${cle}-${special}.jpg`);
   }
   const nbSortie = sources.length;
-  if (a.saisons?.[sz]) sources.push(a.saisons[sz]);
-  if (cle) sources.push(`img/avatars/${cle}-${sz}.png`, `img/avatars/${cle}-${sz}.jpg`);
-  if (a.photo) sources.push(a.photo);
+  ajoute(a.saisons?.[sz]);
+  if (cle) ajoute(`img/avatars/${cle}-${sz}.png`, `img/avatars/${cle}-${sz}.jpg`);
+  ajoute(a.photo);
   const u = findUser(devId, a.user);
-  if (u) { const h = u.avatar || (u.athomId ? `https://api.athom.com/user/${u.athomId}/avatar` : null); if (h) sources.push(h); }
+  if (u) ajoute(u.avatar || (u.athomId ? `https://api.athom.com/user/${u.athomId}/avatar` : null));
   const src = sources[0] || null;
   const z = a.zoom || 1, x = a.x || 0, y = a.y || 0;
   const img = src ? `<img src="${esc(src)}" alt="" style="transform:translate(${x}%,${y}%) scale(${z})" data-alts="${esc(JSON.stringify(sources.slice(1)))}" data-sortie="${nbSortie}" onerror="avSuivant(this)">` : '';
