@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120i';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120i';
-import { icon, TABS } from './icons.js?v=20261120i';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120j';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120j';
+import { icon, TABS } from './icons.js?v=20261120j';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -375,9 +375,13 @@ function curveSeries() {
     const inj = st.curve.inj;
     const achat = st.curve.achat.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(inj, p.t)) }));
     const injNet = st.curve.achat.length ? inj.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(st.curve.achat, p.t)) })) : inj;
-    const prod = st.curve.sol.map((p) => ({ t: p.t, v: p.v * k }));
-    const auto = prod.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(injNet, p.t)) }));
-    return { day0, prod, auto, achat, src: 'Homey' };
+    const prodH = st.curve.sol.map((p) => ({ t: p.t, v: p.v * k }));
+    const autoH = prodH.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(injNet, p.t)) }));
+    // en continu : on prolonge avec les relevés des dernières minutes, jusqu'à maintenant
+    const prod = prolonge(prodH, directE.map((x) => ({ t: x.t, v: x.p })));
+    const auto = prolonge(autoH, directE.map((x) => ({ t: x.t, v: Math.max(0, x.p - x.r) })));
+    const achatC = prolonge(achat, directE.map((x) => ({ t: x.t, v: x.a })));
+    return { day0, prod, auto, achat: achatC, src: 'Homey' };
   }
   const arr = store.get('samples.' + new Date().toISOString().slice(0, 10), []);
   if (arr.length < 3) return null;
@@ -1028,8 +1032,27 @@ function appareilsMesures() {
 
 // Relevés en direct gardés en mémoire (20 dernières minutes, toutes les 5 s)
 const direct = {};
+// Relevés énergie de la maison (toutes les 5 s, 2 h) pour prolonger les courbes jusqu'à maintenant
+const directE = [];
+// Moyenne par minute : les relevés de 5 s rejoignent l'historique Homey sans faire de dents de scie
+function parMinute(pts) {
+  const b = new Map();
+  pts.forEach((p) => { const k = Math.floor(p.t / 60e3); const x = b.get(k) || { s: 0, n: 0 }; x.s += p.v; x.n++; b.set(k, x); });
+  return [...b.entries()].map(([k, x]) => ({ t: k * 60e3 + 30e3, v: x.s / x.n }));
+}
+// Historique + relevés récents postérieurs au dernier point de l'historique
+function prolonge(hist, recents) {
+  const fin = hist.length ? hist[hist.length - 1].t : 0;
+  return [...hist, ...parMinute(recents.filter((p) => p.t > fin))];
+}
+
 function liveSample() {
   const t = Date.now();
+  const e = energyNow();
+  if (e.prod != null || e.achat != null) {
+    directE.push({ t, p: e.prod ?? 0, a: e.achat ?? 0, r: e.revente ?? 0 });
+    while (directE.length && t - directE[0].t > 2 * 36e5) directE.shift();
+  }
   Object.values(st.devices).forEach((d) => {
     const w = d.capabilitiesObj?.measure_power?.value;
     if (typeof w !== 'number') return;
@@ -1112,7 +1135,7 @@ function calculPeriode(id, vue) {
   } else {
     chargeAppareil(id, vue);
     const c = cd.cache[`${id}|${vue}`];
-    pts = c ? c.pts : null;
+    pts = c ? prolonge(c.pts, direct[id] || []) : null;
     if (vue === 'jour') { t0 = d0.getTime(); t1 = t0 + 864e5; ticks = [0, 12, 24].map((hh) => ({ t: t0 + hh * 36e5, l: `${hh} h` })); }
     else if (vue === 'mois') { const m0 = new Date(d0.getFullYear(), d0.getMonth(), 1); const m1 = new Date(d0.getFullYear(), d0.getMonth() + 1, 1); t0 = m0.getTime(); t1 = m1.getTime(); ticks = [{ t: t0, l: '1' }, { t: new Date(m0.getFullYear(), m0.getMonth(), 15).getTime(), l: '15' }, { t: t1, l: String(new Date(t1 - 1).getDate()) }]; }
     else { t0 = new Date(d0.getFullYear(), 0, 1).getTime(); t1 = new Date(d0.getFullYear() + 1, 0, 1).getTime(); ticks = [{ t: t0, l: 'janv' }, { t: new Date(d0.getFullYear(), 6, 1).getTime(), l: 'juil' }, { t: t1, l: 'déc' }]; }
