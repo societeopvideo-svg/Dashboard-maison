@@ -659,7 +659,7 @@ html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-s
 .ek-surplus { fill: var(--ek-bleu); opacity: .75; }
 .ek-auto { fill: var(--ok); opacity: .45; }
 .ek-prod-l { fill: none; stroke: var(--sun); stroke-width: 1.4; }
-.ek-zero { stroke: var(--ek-zero); stroke-width: 4; }
+.ek-zero { stroke: var(--muted); stroke-width: 1; stroke-opacity: .7; }
 .ek-now { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
 .ek-tot { display: flex; align-items: baseline; gap: 12px; margin-top: 16px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
 .ek-tot b { font-size: 20px; color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums; }

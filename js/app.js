@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120o';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120o';
-import { icon, TABS } from './icons.js?v=20261120o';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120p';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120p';
+import { icon, TABS } from './icons.js?v=20261120p';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -381,14 +381,15 @@ function curveSeries() {
     // contient un peu d'achat ET un peu d'injection. Le compteur ne peut pas faire les deux
     // à la fois : on garde seulement le solde du créneau.
     const inj = st.curve.inj;
-    const achat = st.curve.achat.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(inj, p.t)) }));
+    // dès qu'il y a du surplus envoyé au réseau sur un créneau, il n'y a pas d'achat (comme Ecojoko)
+    const achat = st.curve.achat.map((p) => { const i = near(inj, p.t); return { t: p.t, v: i > 20 ? 0 : Math.max(0, p.v - i) }; });
     const injNet = st.curve.achat.length ? inj.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(st.curve.achat, p.t)) })) : inj;
     const prodH = st.curve.sol.map((p) => ({ t: p.t, v: p.v * k }));
     const autoH = prodH.map((p) => ({ t: p.t, v: Math.max(0, p.v - near(injNet, p.t)) }));
     // en continu : on prolonge avec les relevés des dernières minutes, jusqu'à maintenant
     const prod = prolonge(prodH, directE.map((x) => ({ t: x.t, v: x.p })));
     const auto = prolonge(autoH, directE.map((x) => ({ t: x.t, v: Math.max(0, x.p - x.r) })));
-    const achatC = prolonge(achat, directE.map((x) => ({ t: x.t, v: x.a })));
+    const achatC = prolonge(achat, directE.map((x) => ({ t: x.t, v: x.r > 20 ? 0 : x.a })));
     const dans = (l) => l.filter((p) => p.t >= t0);
     return { day0, t0, t1, prod: dans(prod), auto: dans(auto), achat: dans(achatC), src: 'Homey' };
   }
