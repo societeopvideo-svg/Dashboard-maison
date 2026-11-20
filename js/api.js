@@ -99,6 +99,22 @@ export async function forecast(lat, lon) {
   return r.json();
 }
 
+// Prévisions détaillées d'une ville : heure par heure (48 h) et 7 jours
+export async function previsions(lat, lon) {
+  const u = new URL('https://api.open-meteo.com/v1/forecast');
+  u.search = new URLSearchParams({
+    latitude: lat.toFixed(2),
+    longitude: lon.toFixed(2),
+    hourly: 'temperature_2m,weather_code,precipitation_probability,wind_speed_10m',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max,sunrise,sunset',
+    timezone: 'Europe/Paris',
+    forecast_days: '7',
+  });
+  const r = await fetch(u);
+  if (!r.ok) throw new Error('météo');
+  return r.json();
+}
+
 export async function geocode(name) {
   const u = new URL('https://geocoding-api.open-meteo.com/v1/search');
   u.search = new URLSearchParams({ name, count: '5', language: 'fr', countryCode: 'FR' });

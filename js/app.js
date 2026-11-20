@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120e';
-import { Homey, forecast, geocode, actualites } from './api.js?v=20261120e';
-import { icon, TABS } from './icons.js?v=20261120e';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120g';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120g';
+import { icon, TABS } from './icons.js?v=20261120g';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -338,7 +338,7 @@ function cardWeather() {
     }).join('') + '</div>';
   }
   return `<div class="card">
-    <h2>Météo${S.commune ? ` · <span class="wx-place">${esc(S.commune)}</span>` : ''}</h2>
+    <h2>Météo · <button class="wx-place" data-act="meteo">${esc(S.commune || 'Choisir une ville')} <span class="wx-chev">▾</span></button></h2>
     <div class="meteo-body"><div class="meteo-now">
       <div class="big">${!chezNous && v.code != null ? `<span class="wx-now">${WX(v.code)}</span>` : ''}${nf(v.t, 1)}<span class="unit">°C</span></div>
       <div class="meteo-facts">
@@ -444,9 +444,11 @@ function enSoiree(a, d = new Date()) {
   return de < fin ? n >= de && n < fin : n >= de || n < fin;
 }
 // Une image qui ne se charge pas passe à la suivante de sa liste, puis disparaît (l'initiale reste)
-const avIntrouvables = new Set();
+// Images d'avatar qui n'ont pas pu se charger : écartées 10 min (un raté réseau ne doit pas les bannir)
+const avEchecs = new Map();
+const avIntrouvables = { has: (u) => { const t = avEchecs.get(u); if (t && Date.now() - t < 10 * 60e3) return true; avEchecs.delete(u); return false; } };
 window.avSuivant = (img) => {
-  avIntrouvables.add(img.getAttribute('src'));
+  avEchecs.set(img.getAttribute('src'), Date.now());
   // quand les images « sortie » sont épuisées, l'avatar de repli reprend le style normal (gris si absent)
   const n = +(img.dataset.sortie || 0);
   if (n > 0) { img.dataset.sortie = n - 1; if (n - 1 === 0) img.parentElement?.classList.remove('sortie'); }
@@ -569,6 +571,70 @@ function cardAlerts(list) {
 function viewHome() {
   return `<div class="home-top">${cardsPresence()}${cardWeather()}</div>
   <div class="grid">${cardAlerts(alerts())}${cardInfo()}${cardComfort()}${cardEnergy()}${cardCameras()}<div class="stack-col">${cardBlindsSummary()}${cardLightsSummary()}</div></div>`;
+}
+
+/* Fenêtre météo : choix rapide parmi les favoris + prévisions détaillées de la ville */
+const prevCache = {};
+function villesMeteo() {
+  const l = [];
+  if (C.maison) l.push({ name: C.maison.nom, lat: C.maison.lat, lon: C.maison.lon, maison: true });
+  (S.favoris || []).forEach((f) => { if (!l.some((x) => x.name === f.name && Math.abs(x.lat - f.lat) < 0.01)) l.push(f); });
+  if (S.commune && S.lat != null && !l.some((x) => Math.abs(x.lat - S.lat) < 0.01 && Math.abs(x.lon - S.lon) < 0.01)) l.push({ name: S.commune, lat: S.lat, lon: S.lon });
+  return l;
+}
+function contenuMeteo() {
+  const villes = villesMeteo();
+  const cur = (v) => S.lat != null ? Math.abs(v.lat - S.lat) < 0.01 && Math.abs(v.lon - S.lon) < 0.01 : v.maison;
+  const chips = villes.map((v, i) => `<button class="chip-v ${cur(v) ? 'on' : ''}" data-m="${i}">${v.maison ? '⌂ ' : ''}${esc(v.name)}</button>`).join('');
+  const key = S.lat != null ? `${S.lat.toFixed(2)},${S.lon.toFixed(2)}` : 'maison';
+  const p = prevCache[key];
+  let corps = '<p class="muted" style="margin:30px 0;text-align:center">Chargement des prévisions…</p>';
+  if (p?.err) corps = '<p class="muted" style="margin:30px 0;text-align:center">Prévisions indisponibles pour le moment.</p>';
+  else if (p?.data) {
+    const h = p.data.hourly, d = p.data.daily;
+    const maintenant = Date.now();
+    const idx = h.time.map((t, i) => [Date.parse(t), i]).filter(([t]) => t >= maintenant - 36e5).slice(0, 24).filter((_, k) => k % 2 === 0).map(([, i]) => i);
+    const heures = idx.map((i) => `<div class="mh"><span>${new Date(h.time[i]).getHours()} h</span><span class="wx">${WX(h.weather_code[i])}</span><b>${nf(h.temperature_2m[i], 0)}°</b><span class="small">${nf(h.precipitation_probability[i], 0)} %</span></div>`).join('');
+    const jours = d.time.map((t, i) => {
+      const lbl = i === 0 ? 'Aujourd’hui' : i === 1 ? 'Demain' : new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric' });
+      return `<div class="md"><span class="md-j">${lbl}</span><span class="wx">${WX(d.weather_code[i])}</span><span class="md-t"><b>${nf(d.temperature_2m_max[i], 0)}°</b> <span class="muted">${nf(d.temperature_2m_min[i], 0)}°</span></span>
+        <span class="md-p">💧 ${nf(d.precipitation_probability_max[i], 0)} %${d.precipitation_sum[i] >= 0.1 ? ` · ${nf(d.precipitation_sum[i], 1)} mm` : ''}</span><span class="md-v">💨 ${nf(d.wind_speed_10m_max[i], 0)} km/h${d.wind_gusts_10m_max[i] > 50 ? ` · rafales ${nf(d.wind_gusts_10m_max[i], 0)}` : ''}</span></div>`;
+    }).join('');
+    const sol = d.sunrise?.[0] ? `<p class="small muted" style="margin:6px 0 0">Lever ${d.sunrise[0].slice(11, 16)} · coucher ${d.sunset[0].slice(11, 16)}</p>` : '';
+    corps = `<h4>Prochaines heures</h4><div class="mheures">${heures}</div><h4>7 jours</h4><div class="mjours">${jours}</div>${sol}`;
+  }
+  return `<div class="set-head"><h1>Météo · ${esc(S.commune || C.maison?.nom || '')}</h1><button class="btn primary" data-m="fermer">Fermer</button></div>
+    <div class="mchips">${chips}</div>
+    ${(S.favoris || []).length ? '' : '<p class="small muted">Ajoute des communes favorites dans les réglages (tuile Météo) pour les retrouver ici.</p>'}
+    ${corps}`;
+}
+async function chargerPrevisions() {
+  const lat = S.lat ?? C.maison?.lat, lon = S.lon ?? C.maison?.lon;
+  if (lat == null) return;
+  const key = S.lat != null ? `${S.lat.toFixed(2)},${S.lon.toFixed(2)}` : 'maison';
+  if (prevCache[key]?.data && Date.now() - prevCache[key].at < 30 * 60e3) return;
+  try { prevCache[key] = { data: await previsions(lat, lon), at: Date.now() }; }
+  catch { prevCache[key] = { err: true, at: Date.now() }; }
+  const el = document.querySelector('.sheet.meteo');
+  if (el) el.innerHTML = contenuMeteo();
+}
+function openMeteo() {
+  openSheet(contenuMeteo(), (el) => {
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-m]');
+      if (!b) return;
+      if (b.dataset.m === 'fermer') { closeSheet(); return; }
+      const v = villesMeteo()[+b.dataset.m];
+      if (!v) return;
+      if (v.maison) { S.commune = v.name; S.lat = v.lat; S.lon = v.lon; }
+      else { S.commune = v.name; S.lat = v.lat; S.lon = v.lon; }
+      saveSettings();
+      el.innerHTML = contenuMeteo();
+      refreshWeather(true);
+      chargerPrevisions();
+    });
+    chargerPrevisions();
+  }, 'meteo');
 }
 
 /* Info : l'actualité la plus importante, France et Monde (Le Monde, mis à jour toutes les 30 min) */
@@ -1324,6 +1390,7 @@ const actions = {
   ctvue({ id, v }) { cdVues[id] = v; store.set('consoTuiles2', cdVues); render(); },
   cvue({ v }) { cs.vue = v; cs.sel = null; store.set('consoVue', v); render(); },
   cbar({ i }) { cs.sel = cs.sel === +i ? null : +i; render(); },
+  meteo() { openMeteo(); },
   info({ id }) { news.ouvert = news.ouvert === id ? null : id; render(); },
   tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); $('#view').scrollTop = 0; },
   settings() { openSettings(); },
