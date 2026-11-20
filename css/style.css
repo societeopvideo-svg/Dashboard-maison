@@ -656,7 +656,7 @@ html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-s
 .ek-plot svg { width: 100%; display: block; border-left: 1px solid var(--line); }
 .ek-achat { fill: var(--ek-bleu); }
 .ek-achat-l { fill: none; stroke: var(--ek-bleu-l); stroke-width: 1.4; }
-.ek-surplus { fill: var(--ek-bleu); opacity: .75; }
+.ek-surplus { fill: var(--sun); opacity: .38; }
 .ek-auto { fill: var(--ok); opacity: .45; }
 .ek-prod-l { fill: none; stroke: var(--sun); stroke-width: 1.4; }
 .ek-zero { stroke: var(--muted); stroke-width: 1; stroke-opacity: .7; }
@@ -666,6 +666,8 @@ html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-s
 .ek-tot b small { font-size: 12px; font-weight: 500; color: var(--muted); }
 .ek-tot i { width: 1.5px; height: 18px; background: var(--text); opacity: .6; align-self: center; }
 .lg-achat { background: var(--ek-bleu); }
-.lg-surplus { background: var(--ek-bleu); opacity: .75; }
+.lg-surplus { background: var(--sun); opacity: .5; }
 .lg-prod { background: var(--sun); height: 3px !important; margin-top: 4px; }
 .chart .cb-lbls { margin-top: 6px; }
+
+.kpi.ok .lbl, .kpi.ok .val { color: var(--ok); }

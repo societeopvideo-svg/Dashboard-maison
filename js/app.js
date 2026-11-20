@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120p';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120p';
-import { icon, TABS } from './icons.js?v=20261120p';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120q';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120q';
+import { icon, TABS } from './icons.js?v=20261120q';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -442,12 +442,14 @@ function cardEnergy(h = 190) {
   const expNow = cap(C.energie.linky, 'meter_power.exported');
   let surplusJ = st.curve?.exp0 != null && typeof expNow === 'number' ? Math.max(0, expNow - st.curve.exp0) : null;
   if (surplusJ != null && surplusJ > 60) surplusJ = null; // valeur incohérente : on n'affiche rien
-  const sens = e.revente > 0 ? { lbl: 'Revente', v: e.revente } : { lbl: 'Achat', v: e.achat };
+  // Lecture du Linky : rien acheté au réseau = la maison vit sur sa production (autoconsommation)
+  const autoconso = (e.achat ?? 0) < 20 && (e.prod ?? 0) > 50;
+  const sens = e.revente > 0 ? { lbl: 'Surplus vers le réseau', v: e.revente } : autoconso ? { lbl: 'Autoconsommation', v: null } : { lbl: 'Achat réseau', v: e.achat };
   return `<div class="card span-2 tap" data-act="tab" data-id="energie">
     <div class="section-head"><h2>Énergie</h2><span class="row" style="gap:6px">${e.couv != null ? `<span class="tag accent" title="Part de ta consommation couverte par le solaire">Solaire ${pct(e.couv)} % de la conso</span>` : ''}${e.auto != null ? `<span class="tag" title="Part de la production utilisée par la maison">Production utilisée ${pct(e.auto)} %</span>` : ''}</span></div>
     <div class="kpis">
       <div class="kpi sun"><div class="lbl">Production</div><div class="val">${watts(e.prod)}</div><div class="small muted">dont FHE estimé ${e.fhe == null ? '–' : nf(e.fhe, 0) + ' W'}</div></div>
-      <div class="kpi"><div class="lbl">${sens.lbl} réseau</div><div class="val">${watts(sens.v)}</div><div class="small muted">${nf(e.kwhJour, 1)} kWh achetés aujourd’hui</div></div>
+      <div class="kpi ${autoconso || e.revente > 0 ? 'ok' : ''}"><div class="lbl">${sens.lbl}</div><div class="val">${sens.v == null ? '0<span class="unit">W acheté</span>' : watts(sens.v)}</div><div class="small muted">${autoconso || e.revente > 0 ? 'maison 100 % solaire en ce moment' : `${nf(e.kwhJour, 1)} kWh achetés aujourd’hui`}</div></div>
       <div class="kpi"><div class="lbl">Coût du jour</div><div class="val">${nf(e.cout, 2)}<span class="unit">€</span></div><div class="small muted">abonnement compris</div></div>
     </div>
     <div class="ek-tot"><span>Aujourd’hui</span><b>${nf(e.kwhJour, 1)}<small> kWh achetés</small></b><i></i><b>${surplusJ == null ? '–' : nf(surplusJ, 2)}<small> kWh de surplus</small></b></div>
