@@ -112,6 +112,8 @@ export async function geocode(name) {
 const FLUX = {
   une: 'https://www.lemonde.fr/rss/une.xml',
   monde: 'https://www.lemonde.fr/international/rss_full.xml',
+  // Région : ici (ex-France Bleu) Hérault, « À la une » classée par sa rédaction
+  region: 'https://www.francebleu.fr/rss/herault/a-la-une.xml',
 };
 async function flux(url) {
   const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
@@ -127,15 +129,16 @@ async function flux(url) {
     rubrique: (String(i.link || '').split('/')[3] || '').toLowerCase(),
   }));
 }
-export async function actualites() {
-  const [une, monde] = await Promise.all([flux(FLUX.une), flux(FLUX.monde).catch(() => [])]);
+export async function actualites(n = 3) {
+  const [une, monde, region] = await Promise.all([flux(FLUX.une), flux(FLUX.monde).catch(() => []), flux(FLUX.region).catch(() => [])]);
   const vu = new Set();
   const prendre = (l, n) => l.filter((x) => !vu.has(x.lien) && vu.add(x.lien)).slice(0, n);
   const intl = (x) => x.rubrique === 'international';
   // magazine, tribunes et jeux vidéo : pas de « l'info la plus importante »
   const HORS = ['m-le-mag', 'idees', 'pixels', 'le-monde-et-vous', 'jeux'];
   const garde = (x) => !HORS.includes(x.rubrique);
-  const france = prendre(une.filter((x) => garde(x) && !intl(x)), 4);
-  const mondeL = prendre([...une.filter(intl), ...monde.filter(garde)], 4);
-  return { france, monde: mondeL, at: Date.now() };
+  const mondeL = prendre([...une.filter(intl), ...monde.filter(garde)], n);
+  const france = prendre(une.filter((x) => garde(x) && !intl(x)), n);
+  const regionL = prendre(region.map((x) => ({ ...x, rubrique: '' })), n);
+  return { monde: mondeL, france, region: regionL, at: Date.now() };
 }

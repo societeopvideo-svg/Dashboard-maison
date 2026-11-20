@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261119zs';
-import { Homey, forecast, geocode, actualites } from './api.js?v=20261119zs';
-import { icon, TABS } from './icons.js?v=20261119zs';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120a';
+import { Homey, forecast, geocode, actualites } from './api.js?v=20261120a';
+import { icon, TABS } from './icons.js?v=20261120a';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -524,11 +524,11 @@ function viewHome() {
 }
 
 /* Info : l'actualité la plus importante, France et Monde (Le Monde, mis à jour toutes les 30 min) */
-const news = { data: store.get('actu', null), busy: false, ouvert: null };
+const news = { data: store.get('actu2', null), busy: false, ouvert: null };
 async function refreshNews(force = false) {
   if (news.busy || (!force && news.data && Date.now() - news.data.at < 30 * 60e3)) return;
   news.busy = true;
-  try { news.data = await actualites(); store.set('actu', news.data); }
+  try { news.data = await actualites(); store.set('actu2', news.data); }
   catch (e) { console.warn('actu', e); }
   news.busy = false;
   maybeRender();
@@ -555,8 +555,8 @@ function cardInfo() {
         ${open && x.resume ? `<p class="info-r">${esc(x.resume)}</p><a class="info-l" href="${esc(x.lien)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Lire l’article ›</a>` : ''}
       </div></div>`;
   }).join('') || '<p class="small muted">Chargement…</p>'}</div>`;
-  return `<div class="card span-2 info"><div class="section-head"><h2>Info</h2><span class="small muted">Le Monde${d ? ` · ${ilya(d.at)}` : ''}</span></div>
-    ${d || news.busy ? `<div class="info-cols">${col('France', d?.france)}${col('Monde', d?.monde)}</div>` : '<p class="small muted">Actualité indisponible pour le moment.</p>'}
+  return `<div class="card span-2 info"><div class="section-head"><h2>Info</h2><span class="small muted">Le Monde · ici Hérault${d ? ` · ${ilya(d.at)}` : ''}</span></div>
+    ${d || news.busy ? `<div class="info-cols">${col('Monde', d?.monde)}${col('France', d?.france)}${col('Région', d?.region)}</div>` : '<p class="small muted">Actualité indisponible pour le moment.</p>'}
   </div>`;
 }
 
