@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120b';
-import { Homey, forecast, geocode, actualites } from './api.js?v=20261120b';
-import { icon, TABS } from './icons.js?v=20261120b';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120d';
+import { Homey, forecast, geocode, actualites } from './api.js?v=20261120d';
+import { icon, TABS } from './icons.js?v=20261120d';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -1311,7 +1311,7 @@ const actions = {
   cvue({ v }) { cs.vue = v; cs.sel = null; store.set('consoVue', v); render(); },
   cbar({ i }) { cs.sel = cs.sel === +i ? null : +i; render(); },
   info({ id }) { news.ouvert = news.ouvert === id ? null : id; render(); },
-  tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); },
+  tab({ id }) { st.tab = id; store.set('tab', id); render(); window.scrollTo({ top: 0 }); $('#view').scrollTop = 0; },
   settings() { openSettings(); },
   async blind({ id, v }) {
     await send(id, 'windowcoverings_state', v).catch(() => {});
@@ -1707,26 +1707,40 @@ function wakeOnMotion() { if (S.reveil && S.reveilCapteur && cap(S.reveilCapteur
 /* ---------- Plein écran (sans les barres du navigateur) ---------- */
 const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
 const fsOk = () => Boolean(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+// pleinVoulu : le plein écran a été demandé avec le bouton et pas quitté avec lui.
+// Si Safari en sort tout seul (geste de glissement), le prochain toucher le relance.
+let pleinVoulu = false;
 function paintFullBtn() {
   const b = $('#btn-full');
   if (!b) return;
   b.hidden = !fsOk();
   const on = Boolean(fsEl());
+  document.documentElement.classList.toggle('fs', on);
   b.innerHTML = icon(on ? 'reduire' : 'pleinecran', 'line');
   b.setAttribute('aria-label', on ? 'Quitter le plein écran' : 'Plein écran');
 }
+async function entrerPlein() {
+  const d = document.documentElement;
+  await (d.requestFullscreen || d.webkitRequestFullscreen).call(d);
+}
 async function toggleFull() {
   try {
-    if (fsEl()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    else {
-      const d = document.documentElement;
-      await (d.requestFullscreen || d.webkitRequestFullscreen).call(d);
-    }
+    if (fsEl()) { pleinVoulu = false; await (document.exitFullscreen || document.webkitExitFullscreen).call(document); }
+    else { pleinVoulu = true; await entrerPlein(); }
   } catch { toast('Plein écran refusé par le navigateur'); }
   paintFullBtn();
 }
-document.addEventListener('fullscreenchange', paintFullBtn);
-document.addEventListener('webkitfullscreenchange', paintFullBtn);
+function changementPlein() {
+  paintFullBtn();
+  if (!fsEl() && pleinVoulu) toast('Touche l’écran pour revenir en plein écran');
+}
+document.addEventListener('fullscreenchange', changementPlein);
+document.addEventListener('webkitfullscreenchange', changementPlein);
+// Le navigateur n'autorise le plein écran qu'après un geste : on profite du prochain toucher
+document.addEventListener('pointerup', (e) => {
+  if (!pleinVoulu || fsEl() || e.target.closest('#btn-full')) return;
+  entrerPlein().catch(() => {});
+}, true);
 
 /* ---------- Actualiser sans quitter le plein écran ---------- */
 // 1) relit tout dans la Homey et sur Internet (météo), la page reste en plein écran ;

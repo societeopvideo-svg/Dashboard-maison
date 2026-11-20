@@ -616,3 +616,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 .info-m { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .info-r { font-size: 13px; line-height: 1.4; margin: 6px 0 4px; color: var(--text); opacity: .85; }
 .info-l { font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 600; }
+
+/* Plein écran : la page ne défile plus, seul le contenu défile.
+   Le glissement du doigt ne remonte donc plus jusqu'à Safari (qui sortait du plein écran). */
+html.fs, html.fs body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html.fs body { position: fixed; inset: 0; display: flex; flex-direction: column; }
+html.fs header.top { position: relative; flex: none; }
+html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
