@@ -645,3 +645,27 @@ html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-s
 .md .wx { font-size: 20px; }
 .md-p, .md-v { font-size: 12.5px; color: var(--muted); }
 @media (max-width: 640px) { .md { grid-template-columns: 1fr 30px auto; } .md-p, .md-v { grid-column: 1 / -1; } }
+
+/* Graphique énergie façon Ecojoko */
+:root { --ek-bleu: #7DB8D8; --ek-bleu-l: #2F7FAE; --ek-zero: #14305A; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ek-bleu: rgba(125, 184, 216, .45); --ek-bleu-l: #8CC4E6; --ek-zero: #9DB4D6; } }
+:root[data-theme="dark"] { --ek-bleu: rgba(125, 184, 216, .45); --ek-bleu-l: #8CC4E6; --ek-zero: #9DB4D6; }
+.ek { display: grid; grid-template-columns: 58px 1fr; gap: 6px; margin-top: 6px; }
+.ek-y { position: relative; }
+.ek-y span { position: absolute; right: 0; transform: translateY(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ek-plot svg { width: 100%; display: block; border-left: 1px solid var(--line); }
+.ek-achat { fill: var(--ek-bleu); }
+.ek-achat-l { fill: none; stroke: var(--ek-bleu-l); stroke-width: 1.4; }
+.ek-surplus { fill: var(--ek-bleu); opacity: .75; }
+.ek-auto { fill: var(--ok); opacity: .45; }
+.ek-prod-l { fill: none; stroke: var(--sun); stroke-width: 1.4; }
+.ek-zero { stroke: var(--ek-zero); stroke-width: 4; }
+.ek-now { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.ek-tot { display: flex; align-items: baseline; gap: 12px; margin-top: 16px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+.ek-tot b { font-size: 20px; color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums; }
+.ek-tot b small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.ek-tot i { width: 1.5px; height: 18px; background: var(--text); opacity: .6; align-self: center; }
+.lg-achat { background: var(--ek-bleu); }
+.lg-surplus { background: var(--ek-bleu); opacity: .75; }
+.lg-prod { background: var(--sun); height: 3px !important; margin-top: 4px; }
+.chart .cb-lbls { margin-top: 6px; }

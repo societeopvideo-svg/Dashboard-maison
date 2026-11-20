@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120m';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120m';
-import { icon, TABS } from './icons.js?v=20261120m';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120o';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120o';
+import { icon, TABS } from './icons.js?v=20261120o';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -154,13 +154,14 @@ async function refreshCurve(force = false) {
   // Historique enregistré par la Homey depuis minuit : continu même quand l'iPad était en veille
   const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c, 'today'); if (r && r.length) return r; } return null; };
   const P = ['measure_power', 'energy_power'];
-  const [sol, achat, inj] = await Promise.all([
+  const [sol, achat, inj, expo] = await Promise.all([
     hist(C.energie.solaire, P),
     hist(C.energie.linky, P),
     hist(C.energie.linky, ['apparent_power_instant_inject_capability']),
+    hist(C.energie.linky, ['meter_power.exported']),
   ]);
   // on garde la dernière courbe connue (et sur l'iPad) : elle reste affichée en permanence
-  if (sol && achat) { st.curve = { sol, achat, inj: inj || [], jour: new Date().toDateString() }; store.set('courbeJour', st.curve); }
+  if (sol && achat) { st.curve = { sol, achat, inj: inj || [], exp0: expo?.[0]?.v ?? null, jour: new Date().toDateString() }; store.set('courbeJour', st.curve); }
   maybeRender();
 }
 
@@ -396,35 +397,50 @@ function curveSeries() {
   return { day0, t0, t1, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
 }
 
-function chartSVG(series, h = 150) {
+// Graphique de la journée, façon Ecojoko : minuit → minuit, se remplit au fil de la journée.
+// Une seule échelle en watts : achat au réseau au-dessus de zéro ; en dessous, la production
+// (autoconsommation en vert, surplus envoyé au réseau en bleu).
+function pas(v) { const p = 10 ** Math.floor(Math.log10(v)); return [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => v / x <= 4) || p * 10; }
+function chartSVG(series, h = 190) {
   if (!series) return '<p class="small muted">La courbe apparaîtra au fil de la journée.</p>';
-  // Achats au-dessus de l'axe, production et autoconsommation en dessous
   const W = 600, H = h, t0 = series.t0 ?? series.day0.getTime(), span = (series.t1 ?? t0 + 864e5) - t0;
-  const topMax = Math.max(300, ...series.achat.map((p) => p.v)) * 1.08;
-  const botMax = Math.max(300, ...series.prod.map((p) => p.v)) * 1.08;
-  const axe = clamp((topMax / (topMax + botMax)) * H, H * 0.3, H * 0.7);
+  const surplus = series.prod.map((p, i) => ({ t: p.t, v: Math.max(0, p.v - (series.auto?.[i]?.v ?? 0)) }));
+  const maxH = Math.max(500, ...series.achat.map((p) => p.v));
+  const maxB = Math.max(500, ...series.prod.map((p) => p.v));
+  const step = pas(Math.max(maxH, maxB) / 2);
+  const haut = Math.ceil(maxH / step) * step, bas = Math.ceil(maxB / step) * step;
+  const axe = (haut / (haut + bas)) * H; // même échelle au-dessus et en dessous
+  const Y = (v) => (axe - (v / (haut + bas)) * H).toFixed(1); // v positif = achat, négatif = production
   const X = (t) => (((t - t0) / span) * W).toFixed(1);
-  const Yh = (v) => (axe - (clamp(v, 0, topMax) / topMax) * (axe - 2)).toFixed(1);
-  const Yb = (v) => (axe + (clamp(v, 0, botMax) / botMax) * (H - axe - 2)).toFixed(1);
-  const area = (pts, Y) => (pts.length ? `M${X(pts[0].t)},${axe} ` + pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ') + ` L${X(pts[pts.length - 1].t)},${axe} Z` : '');
-  const line = (pts, Y) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
+  const aire = (pts, sgn) => (pts.length ? `M${X(pts[0].t)},${axe.toFixed(1)} ` + pts.map((p) => `L${X(p.t)},${Y(sgn * p.v)}`).join(' ') + ` L${X(pts[pts.length - 1].t)},${axe.toFixed(1)} Z` : '');
+  const ligne = (pts, sgn) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(sgn * p.v)}`).join(' ');
+  // graduations en watts (texte à gauche, hors du dessin)
+  const grad = [];
+  for (let v = haut; v >= -bas; v -= step) grad.push(v);
+  const lignesG = grad.filter((v) => v !== 0).map((v) => `<line x1="0" x2="${W}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" vector-effect="non-scaling-stroke"/>`).join('');
+  const heures = [1, 5, 9, 13, 17, 21];
+  const lignesH = heures.map((hh) => `<line x1="${X(t0 + hh * 36e5)}" x2="${X(t0 + hh * 36e5)}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
   const now = X(Date.now());
-  const hours = [6, 12, 18].map((hh) => `<line x1="${(hh / 24) * W}" x2="${(hh / 24) * W}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
-  return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">
-    ${hours}
-    <path d="${area(series.achat, Yh)}" fill="var(--grid)" fill-opacity=".45"/>
-    <path d="${line(series.achat, Yh)}" fill="none" stroke="var(--muted)" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
-    <path d="${area(series.prod, Yb)}" fill="var(--sun)" fill-opacity=".22"/>
-    <path d="${area(series.auto || [], Yb)}" fill="var(--ok)" fill-opacity=".45"/>
-    <path d="${line(series.prod, Yb)}" fill="none" stroke="var(--sun)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
-    <line x1="0" x2="${W}" y1="${axe.toFixed(1)}" y2="${axe.toFixed(1)}" stroke="var(--muted)" stroke-opacity=".5" vector-effect="non-scaling-stroke"/>
-    <line x1="${now}" x2="${now}" y1="0" y2="${H}" stroke="var(--accent)" stroke-width="1" vector-effect="non-scaling-stroke"/>
-  </svg><span class="axis-lbl top">Achat ${watts(topMax / 1.08)}</span><span class="axis-lbl bot">Production ${watts(botMax / 1.08)}</span></div>
-  <div class="hours"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>`;
+  return `<div class="ek"><div class="ek-y">${grad.filter((v) => v !== -bas).map((v) => `<span style="top:${((Y(v) / H) * 100).toFixed(2)}%">${v === 0 ? '0' : `${nf(v, 0)} W`}</span>`).join('')}</div>
+    <div class="ek-plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">
+      ${lignesG}${lignesH}
+      <path d="${aire(series.achat, 1)}" class="ek-achat"/>
+      <path d="${ligne(series.achat, 1)}" class="ek-achat-l" vector-effect="non-scaling-stroke"/>
+      <path d="${aire(series.prod, -1)}" class="ek-surplus"/>
+      <path d="${aire(series.auto || [], -1)}" class="ek-auto"/>
+      <path d="${ligne(series.prod, -1)}" class="ek-prod-l" vector-effect="non-scaling-stroke"/>
+      <line x1="0" x2="${W}" y1="${axe.toFixed(1)}" y2="${axe.toFixed(1)}" class="ek-zero" vector-effect="non-scaling-stroke"/>
+      <line x1="${now}" x2="${now}" y1="0" y2="${H}" class="ek-now" vector-effect="non-scaling-stroke"/>
+    </svg>
+    <div class="cb-lbls">${heures.map((hh) => `<span style="left:${(((hh * 36e5) / span) * 100).toFixed(2)}%">${pad2(hh)}:00</span>`).join('')}</div></div></div>`;
 }
 
-function cardEnergy() {
+function cardEnergy(h = 190) {
   const e = energyNow();
+  // totaux du jour, comme Ecojoko : acheté | surplus envoyé au réseau
+  const expNow = cap(C.energie.linky, 'meter_power.exported');
+  let surplusJ = st.curve?.exp0 != null && typeof expNow === 'number' ? Math.max(0, expNow - st.curve.exp0) : null;
+  if (surplusJ != null && surplusJ > 60) surplusJ = null; // valeur incohérente : on n'affiche rien
   const sens = e.revente > 0 ? { lbl: 'Revente', v: e.revente } : { lbl: 'Achat', v: e.achat };
   return `<div class="card span-2 tap" data-act="tab" data-id="energie">
     <div class="section-head"><h2>Énergie</h2><span class="row" style="gap:6px">${e.couv != null ? `<span class="tag accent" title="Part de ta consommation couverte par le solaire">Solaire ${pct(e.couv)} % de la conso</span>` : ''}${e.auto != null ? `<span class="tag" title="Part de la production utilisée par la maison">Production utilisée ${pct(e.auto)} %</span>` : ''}</span></div>
@@ -433,8 +449,9 @@ function cardEnergy() {
       <div class="kpi"><div class="lbl">${sens.lbl} réseau</div><div class="val">${watts(sens.v)}</div><div class="small muted">${nf(e.kwhJour, 1)} kWh achetés aujourd’hui</div></div>
       <div class="kpi"><div class="lbl">Coût du jour</div><div class="val">${nf(e.cout, 2)}<span class="unit">€</span></div><div class="small muted">abonnement compris</div></div>
     </div>
-    <div class="chart">${chartSVG(curveSeries())}</div>
-    <div class="legend"><span><i style="background:var(--grid)"></i>Achat au réseau (en haut)</span><span><i style="background:var(--ok);opacity:.7"></i>Autoconsommation</span><span><i style="background:var(--sun);opacity:.45"></i>Production revendue</span><span>Production : Hoymiles + FHE estimé</span></div>
+    <div class="ek-tot"><span>Aujourd’hui</span><b>${nf(e.kwhJour, 1)}<small> kWh achetés</small></b><i></i><b>${surplusJ == null ? '–' : nf(surplusJ, 2)}<small> kWh de surplus</small></b></div>
+    <div class="chart">${chartSVG(curveSeries(), h)}</div>
+    <div class="legend"><span><i class="lg-achat"></i>Achat au réseau</span><span><i style="background:var(--ok);opacity:.7"></i>Autoconsommation</span><span><i class="lg-surplus"></i>Surplus envoyé au réseau</span><span><i class="lg-prod"></i>Production (Hoymiles + FHE estimé)</span></div>
   </div>`;
 }
 
@@ -864,7 +881,7 @@ function viewEnergy() {
     .slice(0, 8);
   return `<h1>Énergie</h1>
   <div class="grid">
-    ${cardEnergy().replace('tap" data-act="tab" data-id="energie"', '"')}
+    ${cardEnergy(260).replace('tap" data-act="tab" data-id="energie"', '"')}
     <div class="card"><h2>Aujourd’hui</h2><div class="stack">
       <div class="row between"><span class="muted">Acheté</span><b>${nf(k('meter_kwh_this_day'), 1)} kWh</b></div>
       <div class="row between"><span class="muted">Produit (estimé)</span><b>${nf(e.prodJourKwh, 1)} kWh</b></div>
