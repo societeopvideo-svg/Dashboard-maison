@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120k';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120k';
-import { icon, TABS } from './icons.js?v=20261120k';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120l';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120l';
+import { icon, TABS } from './icons.js?v=20261120l';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -16,7 +16,7 @@ const saveSettings2 = () => store.set('settings', S);
 
 const st = {
   devices: {}, zones: {}, users: {},
-  ok: false, err: null, wx: null, wxAt: 0, curve: null, curveAt: 0,
+  ok: false, err: null, wx: null, wxAt: 0, curve: store.get('courbe24', null), curveAt: 0,
   tab: store.get('tab', 'accueil'), lastTouch: 0, sheet: false, unlockedUntil: 0,
   lastReq: store.get('lastReq', {}), garageSince: store.get('garageSince', null),
 };
@@ -151,14 +151,15 @@ async function refreshCurve(force = false) {
   if (!homey.ready || (!force && Date.now() - st.curveAt < 5 * 60e3)) return;
   st.curveAt = Date.now();
   // Selon la version de Homey, la puissance est enregistrée sous measure_power ou energy_power
-  const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c); if (r && r.length) return r; } return null; };
+  const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c, 'last24Hours'); if (r && r.length) return r; } return null; };
   const P = ['measure_power', 'energy_power'];
   const [sol, achat, inj] = await Promise.all([
     hist(C.energie.solaire, P),
     hist(C.energie.linky, P),
     hist(C.energie.linky, ['apparent_power_instant_inject_capability']),
   ]);
-  st.curve = sol && achat ? { sol, achat, inj: inj || [] } : null;
+  // on garde la dernière courbe connue (et sur l'iPad) : elle reste affichée en permanence
+  if (sol && achat) { st.curve = { sol, achat, inj: inj || [] }; store.set('courbe24', st.curve); }
   maybeRender();
 }
 
@@ -174,7 +175,8 @@ function sample() {
   store.set(key, arr.slice(-1500));
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (k && k.startsWith(LS + 'samples.') && k !== LS + key) localStorage.removeItem(k);
+    const hierK = LS + 'samples.' + new Date(now - 864e5).toISOString().slice(0, 10);
+    if (k && k.startsWith(LS + 'samples.') && k !== LS + key && k !== hierK) localStorage.removeItem(k);
   }
 }
 
@@ -364,7 +366,9 @@ function cardComfort() {
 }
 
 function curveSeries() {
-  const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+  // 24 heures glissantes : jamais de remise à zéro à minuit
+  const t1 = Date.now(), t0 = t1 - 864e5;
+  const day0 = new Date(t0);
   const k = 1 + S.coefFHE;
   // Autoconsommation = production − ce qui part sur le réseau (injection Linky)
   const near = (arr, t) => { let best = null, d = 6 * 60e3; for (const p of arr) { const x = Math.abs(p.t - t); if (x < d) { d = x; best = p; } } return best ? best.v : 0; };
@@ -381,17 +385,19 @@ function curveSeries() {
     const prod = prolonge(prodH, directE.map((x) => ({ t: x.t, v: x.p })));
     const auto = prolonge(autoH, directE.map((x) => ({ t: x.t, v: Math.max(0, x.p - x.r) })));
     const achatC = prolonge(achat, directE.map((x) => ({ t: x.t, v: x.a })));
-    return { day0, prod, auto, achat: achatC, src: 'Homey' };
+    const dans = (l) => l.filter((p) => p.t >= t0);
+    return { day0, t0, t1, prod: dans(prod), auto: dans(auto), achat: dans(achatC), src: 'Homey' };
   }
-  const arr = store.get('samples.' + new Date().toISOString().slice(0, 10), []);
+  const hier = new Date(t1 - 864e5).toISOString().slice(0, 10);
+  const arr = [...store.get('samples.' + hier, []), ...store.get('samples.' + new Date().toISOString().slice(0, 10), [])].filter((x) => x.t >= t0);
   if (arr.length < 3) return null;
-  return { day0, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
+  return { day0, t0, t1, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
 }
 
 function chartSVG(series, h = 150) {
   if (!series) return '<p class="small muted">La courbe apparaîtra au fil de la journée.</p>';
   // Achats au-dessus de l'axe, production et autoconsommation en dessous
-  const W = 600, H = h, t0 = series.day0.getTime(), span = 864e5;
+  const W = 600, H = h, t0 = series.t0 ?? series.day0.getTime(), span = (series.t1 ?? t0 + 864e5) - t0;
   const topMax = Math.max(300, ...series.achat.map((p) => p.v)) * 1.08;
   const botMax = Math.max(300, ...series.prod.map((p) => p.v)) * 1.08;
   const axe = clamp((topMax / (topMax + botMax)) * H, H * 0.3, H * 0.7);
@@ -400,8 +406,12 @@ function chartSVG(series, h = 150) {
   const Yb = (v) => (axe + (clamp(v, 0, botMax) / botMax) * (H - axe - 2)).toFixed(1);
   const area = (pts, Y) => (pts.length ? `M${X(pts[0].t)},${axe} ` + pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ') + ` L${X(pts[pts.length - 1].t)},${axe} Z` : '');
   const line = (pts, Y) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
-  const now = X(Date.now());
-  const hours = [6, 12, 18].map((hh) => `<line x1="${(hh / 24) * W}" x2="${(hh / 24) * W}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
+  // repères toutes les 6 h, aux vraies heures (ex. 18 h, 0 h, 6 h, 12 h)
+  const reperes = [];
+  const six = 6 * 36e5, dd = new Date(t0); dd.setMinutes(0, 0, 0);
+  for (let t = dd.getTime(); t <= t0 + span; t += 36e5) if (t > t0 && new Date(t).getHours() % 6 === 0) reperes.push(t);
+  const hours = reperes.map((t) => `<line x1="${X(t)}" x2="${X(t)}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
+  const minuit = reperes.find((t) => new Date(t).getHours() === 0);
   return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">
     ${hours}
     <path d="${area(series.achat, Yh)}" fill="var(--grid)" fill-opacity=".45"/>
@@ -410,9 +420,9 @@ function chartSVG(series, h = 150) {
     <path d="${area(series.auto || [], Yb)}" fill="var(--ok)" fill-opacity=".45"/>
     <path d="${line(series.prod, Yb)}" fill="none" stroke="var(--sun)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
     <line x1="0" x2="${W}" y1="${axe.toFixed(1)}" y2="${axe.toFixed(1)}" stroke="var(--muted)" stroke-opacity=".5" vector-effect="non-scaling-stroke"/>
-    <line x1="${now}" x2="${now}" y1="0" y2="${H}" stroke="var(--accent)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    ${minuit ? `<line x1="${X(minuit)}" x2="${X(minuit)}" y1="0" y2="${H}" stroke="var(--muted)" stroke-opacity=".6" vector-effect="non-scaling-stroke"/>` : ''}
   </svg><span class="axis-lbl top">Achat ${watts(topMax / 1.08)}</span><span class="axis-lbl bot">Production ${watts(botMax / 1.08)}</span></div>
-  <div class="hours"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>`;
+  <div class="cb-lbls">${reperes.map((t) => `<span style="left:${(((t - t0) / span) * 100).toFixed(2)}%">${new Date(t).getHours() === 0 ? 'minuit' : `${new Date(t).getHours()} h`}</span>`).join('')}<span style="left:100%;transform:translateX(-100%)">maint.</span></div>`;
 }
 
 function cardEnergy() {
@@ -1063,9 +1073,18 @@ function liveSample() {
 }
 
 const cd = { cache: {}, busy: false };
-const RES = { direct: 'lastHour', jour: 'today', mois: 'thisMonth', annee: 'thisYear' };
+// Jour = 24 h glissantes, Mois = 30 jours glissants, Année = 12 mois glissants (jamais de remise à zéro)
+const RES = { direct: 'lastHour', jour: 'last24Hours', mois: 'last31Days', annee: 'last2Years' };
+const FENETRE = { jour: 864e5, mois: 30 * 864e5, annee: 365 * 864e5 };
 
 const cdFile = new Set();
+// Courbes gardées sur l'iPad (onglet choisi de chaque tuile) : affichées tout de suite à l'ouverture
+Object.assign(cd.cache, Object.fromEntries(Object.entries(store.get('courbesApp', {})).map(([k, v]) => [k, { ...v, at: 0 }])));
+function sauveCourbes() {
+  const garde = {};
+  Object.entries(cd.cache).forEach(([k, v]) => { const [id, vue] = k.split('|'); if (vue !== 'direct' && (cdVues[id] || 'direct') === vue && v.pts?.length) garde[k] = { pts: v.pts, kwhPts: v.kwhPts }; });
+  store.set('courbesApp', garde);
+}
 async function chargeAppareil(id, vue) {
   const key = `${id}|${vue}`;
   const c = cd.cache[key];
@@ -1078,8 +1097,12 @@ async function chargeAppareil(id, vue) {
     for (const capId of ['measure_power', 'energy_power']) { pts = await homey.insights(id, capId, RES[vue]); if (pts && pts.length) break; }
     let kwhPts = null;
     if (has(id, 'meter_power')) kwhPts = await homey.insights(id, 'meter_power', RES[vue]);
-    cd.cache[key] = { at: Date.now(), pts: pts || [], kwhPts: kwhPts || [] };
-  } catch { cd.cache[key] = { at: Date.now(), pts: [], kwhPts: [] }; }
+    const debut = FENETRE[vue] ? Date.now() - FENETRE[vue] : 0;
+    const coupe = (l) => (l || []).filter((p) => p.t >= debut).map((p) => ({ t: p.t, v: Math.round(p.v * 100) / 100 }));
+    if ((pts && pts.length) || !c) cd.cache[key] = { at: Date.now(), pts: coupe(pts), kwhPts: coupe(kwhPts) };
+    else c.at = Date.now(); // rien reçu : on garde la dernière courbe connue
+    sauveCourbes();
+  } catch { if (c) c.at = Date.now(); else cd.cache[key] = { at: Date.now(), pts: [], kwhPts: [] }; }
   cd.busy = false;
   cdFile.delete(key);
   const suivant = cdFile.values().next().value;
@@ -1137,9 +1160,17 @@ function calculPeriode(id, vue) {
     chargeAppareil(id, vue);
     const c = cd.cache[`${id}|${vue}`];
     pts = c ? prolonge(c.pts, direct[id] || []) : null;
-    if (vue === 'jour') { t0 = d0.getTime(); t1 = t0 + 864e5; ticks = [0, 12, 24].map((hh) => ({ t: t0 + hh * 36e5, l: `${hh} h` })); }
-    else if (vue === 'mois') { const m0 = new Date(d0.getFullYear(), d0.getMonth(), 1); const m1 = new Date(d0.getFullYear(), d0.getMonth() + 1, 1); t0 = m0.getTime(); t1 = m1.getTime(); ticks = [{ t: t0, l: '1' }, { t: new Date(m0.getFullYear(), m0.getMonth(), 15).getTime(), l: '15' }, { t: t1, l: String(new Date(t1 - 1).getDate()) }]; }
-    else { t0 = new Date(d0.getFullYear(), 0, 1).getTime(); t1 = new Date(d0.getFullYear() + 1, 0, 1).getTime(); ticks = [{ t: t0, l: 'janv' }, { t: new Date(d0.getFullYear(), 6, 1).getTime(), l: 'juil' }, { t: t1, l: 'déc' }]; }
+    t1 = now; t0 = now - FENETRE[vue];
+    if (vue === 'jour') {
+      // repères aux vraies heures, toutes les 8 h
+      const dd = new Date(t0); dd.setMinutes(0, 0, 0);
+      for (let t = dd.getTime() + 36e5; t < t1; t += 36e5) if (new Date(t).getHours() % 8 === 0) ticks.push({ t, l: new Date(t).getHours() === 0 ? 'minuit' : `${new Date(t).getHours()} h` });
+    } else if (vue === 'mois') {
+      for (let k = 3; k >= 0; k--) { const t = now - k * 8 * 864e5 - 864e5; ticks.push({ t, l: new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }).replace('.', '') }); }
+    } else {
+      const m = new Date(t0); m.setDate(1); m.setHours(0, 0, 0, 0);
+      for (m.setMonth(m.getMonth() + 1); m.getTime() < t1; m.setMonth(m.getMonth() + 3)) ticks.push({ t: m.getTime(), l: MOIS[m.getMonth()].replace('.', '') });
+    }
   }
   let kwh = null;
   const c = cd.cache[`${id}|${vue}`];
@@ -1153,14 +1184,14 @@ function tuileAppareil(x, cls) {
   const vue = cdVues[x.id] || 'direct';
   const r = calculPeriode(x.id, vue);
   const seg = [['direct', 'Direct'], ['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => `<button class="${vue === v ? 'on' : ''}" data-act="ctvue" data-id="${x.id}" data-v="${v}">${l}</button>`).join('');
-  const periode = { direct: '1 h', jour: 'jour', mois: 'mois', annee: 'année' }[vue];
+  const periode = { direct: '1 h', jour: '24 h', mois: '30 j', annee: '12 mois' }[vue];
   // Couleur selon la consommation en cours : vert faible, orange moyenne, rouge élevée
   const [s1, s2] = C.seuilsConso || [150, 800];
   const niveau = x.w < 1 ? '' : x.w < s1 ? 'c-faible' : x.w < s2 ? 'c-moyen' : 'c-eleve';
   return `<div class="card ctile ${cls} ${niveau}">
     <div class="ct-head"><div class="ct-nm"><b>${esc(x.nom)}</b><small>${esc(x.piece || '')}</small></div><span class="ct-w">${watts(x.w)}</span></div>
     <div class="seg ct-seg">${seg}</div>
-    ${r.pts === null ? '<p class="small muted ct-wait">Chargement…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84, now: vue === 'direct' })}
+    ${r.pts === null ? '<p class="small muted ct-wait">Chargement de la courbe…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84, now: vue === 'direct' })}
     <div class="ct-foot"><span>${periode} : <b>${r.kwh == null ? '–' : `${nf(r.kwh, r.kwh < 10 ? 2 : 1)} kWh`}</b>${r.kwh == null ? '' : ` · ${nf(r.kwh * S.prixKwh, 2)} €`}</span><span class="muted">pic ${r.pic == null ? '–' : watts(r.pic)}</span></div>
   </div>`;
 }
