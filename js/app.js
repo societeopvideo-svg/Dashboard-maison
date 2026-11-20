@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120g';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120g';
-import { icon, TABS } from './icons.js?v=20261120g';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120h';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120h';
+import { icon, TABS } from './icons.js?v=20261120h';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -1818,10 +1818,38 @@ function changementPlein() {
 document.addEventListener('fullscreenchange', changementPlein);
 document.addEventListener('webkitfullscreenchange', changementPlein);
 // Le navigateur n'autorise le plein écran qu'après un geste : on profite du prochain toucher
-document.addEventListener('pointerup', (e) => {
-  if (!pleinVoulu || fsEl() || e.target.closest('#btn-full')) return;
+const relancePlein = (e) => {
+  if (!pleinVoulu || fsEl() || e.target.closest?.('#btn-full')) return;
   entrerPlein().catch(() => {});
-}, true);
+};
+['touchend', 'pointerup', 'click'].forEach((t) => document.addEventListener(t, relancePlein, true));
+
+// En plein écran, on bloque les glissements qui font sortir Safari :
+// tirer vers le bas quand le contenu est déjà en haut, vers le haut quand il est en bas,
+// tout glissement hors d'une zone qui défile, et le pincement (zoom).
+let touchY = 0, touchX = 0;
+const zoneDefilante = (el) => {
+  for (let n = el; n && n !== document.body; n = n.parentElement) {
+    const cs = getComputedStyle(n);
+    if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1) return n;
+  }
+  return null;
+};
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) { touchY = e.touches[0].clientY; touchX = e.touches[0].clientX; }
+}, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (!fsEl() && !pleinVoulu) return;
+  if (e.touches.length > 1) { e.preventDefault(); return; } // pincement
+  const t = e.touches[0];
+  const dy = t.clientY - touchY, dx = t.clientX - touchX;
+  if (e.target.closest('input[type=range]') || Math.abs(dx) > Math.abs(dy) * 1.5) return; // curseurs, glissements horizontaux
+  const z = zoneDefilante(e.target);
+  if (!z) { e.preventDefault(); return; }
+  const enHaut = z.scrollTop <= 0, enBas = z.scrollTop + z.clientHeight >= z.scrollHeight - 1;
+  if ((dy > 0 && enHaut) || (dy < 0 && enBas)) e.preventDefault();
+}, { passive: false });
+['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => { if (fsEl() || pleinVoulu) e.preventDefault(); }, { passive: false }));
 
 /* ---------- Actualiser sans quitter le plein écran ---------- */
 // 1) relit tout dans la Homey et sur Internet (météo), la page reste en plein écran ;

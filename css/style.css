@@ -645,3 +645,6 @@ html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-s
 .md .wx { font-size: 20px; }
 .md-p, .md-v { font-size: 12.5px; color: var(--muted); }
 @media (max-width: 640px) { .md { grid-template-columns: 1fr 30px auto; } .md-p, .md-v { grid-column: 1 / -1; } }
+/* Plein écran : pas de menu d'appui long ni de sélection qui pourraient déclencher un geste de Safari */
+html.fs, html.fs * { -webkit-touch-callout: none; }
+html.fs body { touch-action: pan-y; }
