@@ -3,6 +3,10 @@
 // Une clé d'accès est indispensable pour en tirer quoi que ce soit.
 
 export const CONFIG = {
+  // Position de la maison : près d'ici, la tuile météo affiche les capteurs de la maison ;
+  // ailleurs, la météo locale de la commune choisie (Open-Meteo)
+  maison: { nom: 'Saint-Paul-et-Valmalle', lat: 43.6272, lon: 3.6756 },
+
   meteo: {
     exterieur: '140c4a81-3c91-4f97-84fa-87fa6ab134b2',
     vent: '41e89a3e-2470-49d3-8d4e-9573a98f937c',

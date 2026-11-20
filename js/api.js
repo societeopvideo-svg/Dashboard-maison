@@ -88,7 +88,9 @@ export async function forecast(lat, lon) {
   u.search = new URLSearchParams({
     latitude: lat.toFixed(2),
     longitude: lon.toFixed(2),
-    daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum',
+    // conditions actuelles : utilisées quand la commune affichée n'est pas celle de la maison
+    current: 'temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,weather_code',
     timezone: 'Europe/Paris',
     forecast_days: '4',
   });

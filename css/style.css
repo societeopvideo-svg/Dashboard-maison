@@ -623,3 +623,5 @@ html.fs, html.fs body { height: 100%; overflow: hidden; overscroll-behavior: non
 html.fs body { position: fixed; inset: 0; display: flex; flex-direction: column; }
 html.fs header.top { position: relative; flex: none; }
 html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+.meteo-src { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+.wx-now { font-size: .6em; margin-right: 10px; vertical-align: .25em; }

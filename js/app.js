@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120d';
-import { Homey, forecast, geocode, actualites } from './api.js?v=20261120d';
-import { icon, TABS } from './icons.js?v=20261120d';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120e';
+import { Homey, forecast, geocode, actualites } from './api.js?v=20261120e';
+import { icon, TABS } from './icons.js?v=20261120e';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -312,9 +312,23 @@ function viewSetup() {
 const WX = (c) => (c === 0 ? '☀️' : c <= 2 ? '🌤️' : c === 3 ? '☁️' : c <= 48 ? '🌫️' : c <= 67 ? '🌧️' : c <= 77 ? '❄️' : c <= 82 ? '🌦️' : '⛈️');
 const DIR = (a) => (a == null ? '' : ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(a / 45) % 8]);
 
+// Distance en km entre deux points (pour savoir si la commune affichée est celle de la maison)
+function distanceKm(a, b) {
+  const R = 6371, rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const communeMaison = () => S.lat == null || S.lon == null || !C.maison || distanceKm({ lat: S.lat, lon: S.lon }, C.maison) < 6;
+
 function cardWeather() {
   const M = C.meteo;
-  const t = cap(M.exterieur, 'measure_temperature');
+  const chezNous = communeMaison();
+  const cur = st.wx?.current;
+  // Mesures : capteurs Netatmo de la maison, ou météo locale de la commune choisie
+  const v = chezNous
+    ? { t: cap(M.exterieur, 'measure_temperature'), hum: cap(M.exterieur, 'measure_humidity'), vent: cap(M.vent, 'measure_wind_strength'), dir: cap(M.vent, 'measure_wind_angle'), raf: cap(M.vent, 'measure_gust_strength'), pluie: cap(M.pluie, 'measure_rain.24h'), pres: cap(M.station, 'measure_pressure'), src: 'Station de la maison' }
+    : { t: cur?.temperature_2m, hum: cur?.relative_humidity_2m, vent: cur?.wind_speed_10m, dir: cur?.wind_direction_10m, raf: cur?.wind_gusts_10m, pluie: st.wx?.daily?.precipitation_sum?.[0], pres: cur?.pressure_msl, code: cur?.weather_code, src: 'Météo locale (Open-Meteo)' };
   let fc = '<p class="small muted" style="margin:16px 0 0">Indique la commune dans les réglages pour afficher les prévisions.</p>';
   if (st.wx?.daily) {
     const d = st.wx.daily;
@@ -326,15 +340,15 @@ function cardWeather() {
   return `<div class="card">
     <h2>Météo${S.commune ? ` · <span class="wx-place">${esc(S.commune)}</span>` : ''}</h2>
     <div class="meteo-body"><div class="meteo-now">
-      <div class="big">${nf(t, 1)}<span class="unit">°C</span></div>
+      <div class="big">${!chezNous && v.code != null ? `<span class="wx-now">${WX(v.code)}</span>` : ''}${nf(v.t, 1)}<span class="unit">°C</span></div>
       <div class="meteo-facts">
-        <span>Humidité</span><b>${nf(cap(M.exterieur, 'measure_humidity'), 0)} %</b>
-        <span>Vent</span><b>${nf(cap(M.vent, 'measure_wind_strength'), 0)} km/h ${DIR(cap(M.vent, 'measure_wind_angle'))}</b>
-        <span>Rafales</span><b>${nf(cap(M.vent, 'measure_gust_strength'), 0)} km/h</b>
-        <span>Pluie 24 h</span><b>${nf(cap(M.pluie, 'measure_rain.24h'), 1)} mm</b>
-        <span>Pression</span><b>${nf(cap(M.station, 'measure_pressure'), 0)} hPa</b>
+        <span>Humidité</span><b>${nf(v.hum, 0)} %</b>
+        <span>Vent</span><b>${nf(v.vent, 0)} km/h ${DIR(v.dir)}</b>
+        <span>Rafales</span><b>${nf(v.raf, 0)} km/h</b>
+        <span>Pluie 24 h</span><b>${nf(v.pluie, 1)} mm</b>
+        <span>Pression</span><b>${nf(v.pres, 0)} hPa</b>
       </div>
-    </div>${fc}</div>
+    </div>${fc}<p class="meteo-src">${v.src}</p></div>
   </div>`;
 }
 
