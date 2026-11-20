@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120l';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120l';
-import { icon, TABS } from './icons.js?v=20261120l';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120m';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120m';
+import { icon, TABS } from './icons.js?v=20261120m';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -16,7 +16,7 @@ const saveSettings2 = () => store.set('settings', S);
 
 const st = {
   devices: {}, zones: {}, users: {},
-  ok: false, err: null, wx: null, wxAt: 0, curve: store.get('courbe24', null), curveAt: 0,
+  ok: false, err: null, wx: null, wxAt: 0, curve: ((c) => (c && c.jour === new Date().toDateString() ? c : null))(store.get('courbeJour', null)), curveAt: 0,
   tab: store.get('tab', 'accueil'), lastTouch: 0, sheet: false, unlockedUntil: 0,
   lastReq: store.get('lastReq', {}), garageSince: store.get('garageSince', null),
 };
@@ -151,7 +151,8 @@ async function refreshCurve(force = false) {
   if (!homey.ready || (!force && Date.now() - st.curveAt < 5 * 60e3)) return;
   st.curveAt = Date.now();
   // Selon la version de Homey, la puissance est enregistrée sous measure_power ou energy_power
-  const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c, 'last24Hours'); if (r && r.length) return r; } return null; };
+  // Historique enregistré par la Homey depuis minuit : continu même quand l'iPad était en veille
+  const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c, 'today'); if (r && r.length) return r; } return null; };
   const P = ['measure_power', 'energy_power'];
   const [sol, achat, inj] = await Promise.all([
     hist(C.energie.solaire, P),
@@ -159,7 +160,7 @@ async function refreshCurve(force = false) {
     hist(C.energie.linky, ['apparent_power_instant_inject_capability']),
   ]);
   // on garde la dernière courbe connue (et sur l'iPad) : elle reste affichée en permanence
-  if (sol && achat) { st.curve = { sol, achat, inj: inj || [] }; store.set('courbe24', st.curve); }
+  if (sol && achat) { st.curve = { sol, achat, inj: inj || [], jour: new Date().toDateString() }; store.set('courbeJour', st.curve); }
   maybeRender();
 }
 
@@ -366,9 +367,11 @@ function cardComfort() {
 }
 
 function curveSeries() {
-  // 24 heures glissantes : jamais de remise à zéro à minuit
-  const t1 = Date.now(), t0 = t1 - 864e5;
-  const day0 = new Date(t0);
+  // Journée de minuit à minuit
+  const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+  const t0 = day0.getTime(), t1 = t0 + 864e5;
+  // la courbe gardée d'hier ne sert plus après minuit
+  if (st.curve && st.curve.jour && st.curve.jour !== day0.toDateString()) st.curve = null;
   const k = 1 + S.coefFHE;
   // Autoconsommation = production − ce qui part sur le réseau (injection Linky)
   const near = (arr, t) => { let best = null, d = 6 * 60e3; for (const p of arr) { const x = Math.abs(p.t - t); if (x < d) { d = x; best = p; } } return best ? best.v : 0; };
@@ -388,8 +391,7 @@ function curveSeries() {
     const dans = (l) => l.filter((p) => p.t >= t0);
     return { day0, t0, t1, prod: dans(prod), auto: dans(auto), achat: dans(achatC), src: 'Homey' };
   }
-  const hier = new Date(t1 - 864e5).toISOString().slice(0, 10);
-  const arr = [...store.get('samples.' + hier, []), ...store.get('samples.' + new Date().toISOString().slice(0, 10), [])].filter((x) => x.t >= t0);
+  const arr = store.get('samples.' + new Date().toISOString().slice(0, 10), []).filter((x) => x.t >= t0);
   if (arr.length < 3) return null;
   return { day0, t0, t1, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
 }
@@ -406,12 +408,8 @@ function chartSVG(series, h = 150) {
   const Yb = (v) => (axe + (clamp(v, 0, botMax) / botMax) * (H - axe - 2)).toFixed(1);
   const area = (pts, Y) => (pts.length ? `M${X(pts[0].t)},${axe} ` + pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ') + ` L${X(pts[pts.length - 1].t)},${axe} Z` : '');
   const line = (pts, Y) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
-  // repères toutes les 6 h, aux vraies heures (ex. 18 h, 0 h, 6 h, 12 h)
-  const reperes = [];
-  const six = 6 * 36e5, dd = new Date(t0); dd.setMinutes(0, 0, 0);
-  for (let t = dd.getTime(); t <= t0 + span; t += 36e5) if (t > t0 && new Date(t).getHours() % 6 === 0) reperes.push(t);
-  const hours = reperes.map((t) => `<line x1="${X(t)}" x2="${X(t)}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
-  const minuit = reperes.find((t) => new Date(t).getHours() === 0);
+  const now = X(Date.now());
+  const hours = [6, 12, 18].map((hh) => `<line x1="${(hh / 24) * W}" x2="${(hh / 24) * W}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
   return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">
     ${hours}
     <path d="${area(series.achat, Yh)}" fill="var(--grid)" fill-opacity=".45"/>
@@ -420,9 +418,9 @@ function chartSVG(series, h = 150) {
     <path d="${area(series.auto || [], Yb)}" fill="var(--ok)" fill-opacity=".45"/>
     <path d="${line(series.prod, Yb)}" fill="none" stroke="var(--sun)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
     <line x1="0" x2="${W}" y1="${axe.toFixed(1)}" y2="${axe.toFixed(1)}" stroke="var(--muted)" stroke-opacity=".5" vector-effect="non-scaling-stroke"/>
-    ${minuit ? `<line x1="${X(minuit)}" x2="${X(minuit)}" y1="0" y2="${H}" stroke="var(--muted)" stroke-opacity=".6" vector-effect="non-scaling-stroke"/>` : ''}
+    <line x1="${now}" x2="${now}" y1="0" y2="${H}" stroke="var(--accent)" stroke-width="1" vector-effect="non-scaling-stroke"/>
   </svg><span class="axis-lbl top">Achat ${watts(topMax / 1.08)}</span><span class="axis-lbl bot">Production ${watts(botMax / 1.08)}</span></div>
-  <div class="cb-lbls">${reperes.map((t) => `<span style="left:${(((t - t0) / span) * 100).toFixed(2)}%">${new Date(t).getHours() === 0 ? 'minuit' : `${new Date(t).getHours()} h`}</span>`).join('')}<span style="left:100%;transform:translateX(-100%)">maint.</span></div>`;
+  <div class="hours"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>`;
 }
 
 function cardEnergy() {
@@ -1917,5 +1915,10 @@ refreshWeather(true);
 setInterval(refresh, 5e3);
 setInterval(refreshSlow, 10 * 60e3);
 setInterval(() => { refreshWeather(); refreshCurve(); refreshCameras(); }, 60e3);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); refreshWeather(); refreshCurve(true); } });
+// Au réveil de l'iPad (écran déverrouillé, retour dans Safari ou l'app) : on relit tout de suite
+// l'historique de la Homey, qui a continué d'enregistrer pendant la veille → courbe sans trou
+const auReveil = () => { if (!document.hidden) { refresh(); refreshWeather(); refreshCurve(true); } };
+document.addEventListener('visibilitychange', auReveil);
+window.addEventListener('pageshow', auReveil);
+window.addEventListener('focus', auReveil);
 armSleep();
