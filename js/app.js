@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120j';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120j';
-import { icon, TABS } from './icons.js?v=20261120j';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261120k';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120k';
+import { icon, TABS } from './icons.js?v=20261120k';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -1120,11 +1120,12 @@ function calculPeriode(id, vue) {
   const d0 = new Date(); d0.setHours(0, 0, 0, 0);
   let pts, t0, t1 = now, ticks = [];
   if (vue === 'direct') {
-    // Tranche d'une heure qui démarre à l'heure actuelle (arrondie à 5 min) : 16:50 à gauche,
-    // puis 17:00, 17:10… vers la droite. Quand la tranche est pleine, une nouvelle commence.
+    // Une heure affichée, heures croissantes vers la droite. Au début, la courbe part de l'heure
+    // d'ouverture (à gauche) et se remplit vers la droite ; une fois pleine, elle glisse en continu
+    // (jamais de remise à zéro) : l'instant présent reste près du bord droit.
     const cinq = 5 * 60e3;
-    if (!trancheDirect || now >= trancheDirect + 60 * 60e3) trancheDirect = Math.floor(now / cinq) * cinq;
-    t0 = trancheDirect; t1 = t0 + 60 * 60e3;
+    if (!trancheDirect) trancheDirect = Math.floor(now / cinq) * cinq;
+    t0 = Math.max(trancheDirect, Math.ceil(now / cinq) * cinq - 55 * 60e3); t1 = t0 + 60 * 60e3;
     pts = (direct[id] || []).filter((p) => p.t >= t0);
     const hm = (tq) => { const d = new Date(tq); return `${d.getHours()}:${pad2(d.getMinutes())}`; };
     const q = 15 * 60e3;
