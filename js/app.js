@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123j';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123j';
-import { icon, TABS } from './icons.js?v=20261123j';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123k';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123k';
+import { icon, TABS } from './icons.js?v=20261123k';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -965,9 +965,9 @@ function cardBattery() {
   </div>`;
 }
 
-// Plan de la maison (la vraie, d'après photo de face et vue du ciel) : plain-pied crème,
-// toit en tuiles à quatre pans, pergola à gauche, porche carré au centre, panneaux sur le pan
-// avant, garage à droite. Vue presque de face ; lignes en tirets qui défilent dans le sens de l'énergie.
+// Plan de la maison (la vraie, d'après photo de face et vue du ciel) : plain-pied crème en L,
+// toits en tuiles à croupes, pergola à gauche, porche dans l'angle, panneaux sur l'aile du fond,
+// garage à droite. Vue presque de face ; lignes en tirets qui défilent dans le sens de l'énergie.
 function cardHousePlan() {
   const e = energyNow();
   const S0 = 30;
@@ -980,69 +980,73 @@ function cardHousePlan() {
     poly([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], `${cls} f-top`)
     + poly([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], `${cls} f-y`)
     + poly([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], `${cls} f-x`);
-  // ouverture dessinée sur la façade (y = D)
-  const D = 6, H = 2.8, L = 16;
-  const facade = (x0, x1, z0, z1, cls) => poly([[x0, D + 0.01, z0], [x1, D + 0.01, z0], [x1, D + 0.01, z1], [x0, D + 0.01, z1]], cls);
+  const H = 2.8, L = 17;
   const pct = clamp((e.battPct ?? 0) / 100, 0, 1);
   const allume = (e.maison ?? 0) > 20 ? ' on' : '';
   const out = [];
 
-  out.push(poly([[-5.3, -0.3, 0], [20.6, -0.3, 0], [20.6, 7.9, 0], [-5.3, 7.9, 0]], 'iso-sol'));
+  out.push(poly([[-5.3, -0.3, 0], [22.6, -0.3, 0], [22.6, 11.6, 0], [-5.3, 11.6, 0]], 'iso-sol'));
   // pylône du réseau, à droite
-  const px = 18.9, py = 6.4, ph = 4.6;
+  const px = 21, py = 8.6, ph = 4.6;
   const pyl = [];
   [[-0.32, -0.32], [0.32, -0.32], [0.32, 0.32], [-0.32, 0.32]].forEach(([dx, dy]) => pyl.push(line([[px + dx, py + dy, 0], [px + dx * 0.25, py + dy * 0.25, ph]])));
   [1.4, 2.8, 4.1].forEach((z) => { const r = 0.32 - (z / ph) * 0.24; pyl.push(line([[px - r, py + r, z], [px + r, py + r, z], [px + r, py - r, z]])); });
   pyl.push(line([[px - 1.2, py, ph - 0.9], [px + 1.2, py, ph - 0.9]]), line([[px - 0.75, py, ph - 0.3], [px + 0.75, py, ph - 0.3]]));
-  out.push(`<path d="${pyl.join(' ')}" class="iso-pylone"/>`);
+  const pylone = `<path d="${pyl.join(' ')}" class="iso-pylone"/>`; // dessiné après la maison (il est devant)
 
-  // corps de la maison
-  out.push(box(0, L, 0, D, 0, H, 'mz-mur'));
-  // toit à quatre pans (débord 0,3) : pan arrière et croupe gauche d'abord (silhouette), puis pan avant et croupe droite
-  const o = 0.3, zr = H + 1.45, ze = H + 0.05; // bord du toit au-dessus du haut des murs
-  const A0 = [-o, -o, ze], A1 = [L + o, -o, ze], A2 = [L + o, D + o, ze], A3 = [-o, D + o, ze];
-  const R0 = [D / 2, D / 2, zr], R1 = [L - D / 2, D / 2, zr];
-  out.push(poly([A0, A1, R1, R0], 'mz-tuile arriere'));
-  out.push(poly([A0, A3, R0], 'mz-tuile croupe'));
-  out.push(poly([A3, A2, R1, R0], 'mz-tuile'));
-  out.push(poly([A1, A2, R1], 'mz-tuile croupe'));
-  out.push(`<path d="${line([A3, R0])} ${line([A2, R1])} ${line([R0, R1])}" class="mz-aretier"/>`);
-  // panneaux solaires sur le pan avant (2 rangées, à droite du porche)
-  const rp = (x, t) => [x, D + o - (D / 2 + o) * t, ze + (zr - ze) * t + 0.05];
+  // Maison en L (vue du ciel) : aile longue au fond (x 0→L, y 0→6), aile avant à gauche (x 0→6, y 6→10)
+  // qui avance vers la rue ; même pente partout, donc mêmes faîtages et une noue dans l'angle.
+  const W = 6, F = 10.2; // largeur des ailes, avant de l'aile gauche
+  out.push(box(0, L, 0, W, 0, H, 'mz-mur'));
+  out.push(box(0, W, W, F, 0, H, 'mz-mur'));
+  const o = 0.3, ze = H + 0.05, h = W / 2 + o, zr = ze + h * 0.42; // pente ~23°
+  const E = { bg: [-o, -o, ze], bd: [L + o, -o, ze], ad: [L + o, W + o, ze], coin: [W + o, W + o, ze], fd: [W + o, F + o, ze], fg: [-o, F + o, ze] };
+  const Rg = [W / 2, W / 2, zr], Rd = [L - W / 2, W / 2, zr], Rf = [W / 2, F + o - h, zr];
+  // pans cachés d'abord (silhouette), puis pans visibles
+  out.push(poly([E.bg, E.bd, Rd, Rg], 'mz-tuile arriere'));
+  out.push(poly([E.bg, E.fg, Rf, Rg], 'mz-tuile croupe'));
+  out.push(poly([E.coin, E.ad, Rd, Rg], 'mz-tuile'));                      // pan avant de l'aile longue
+  out.push(poly([E.bd, E.ad, Rd], 'mz-tuile croupe'));                     // croupe droite
+  out.push(poly([E.coin, E.fd, Rf, Rg], 'mz-tuile croupe'));               // pan droit de l'aile avant
+  out.push(poly([E.fg, E.fd, Rf], 'mz-tuile'));                            // croupe avant
+  out.push(`<path d="${line([Rg, Rd])} ${line([Rg, Rf])} ${line([E.ad, Rd])} ${line([E.fg, Rf])} ${line([E.fd, Rf])} ${line([E.coin, Rg])}" class="mz-aretier"/>`);
+  // panneaux sur le pan avant de l'aile longue, à droite de l'angle
+  const rp = (x, t) => [x, W + o - h * t, ze + (zr - ze) * t + 0.05];
   for (let r = 0; r < 2; r++) for (let c = 0; c < 9; c++) {
-    const x0 = 7 + c * 0.62, t0 = 0.1 + r * 0.3;
-    out.push(poly([rp(x0, t0), rp(x0 + 0.56, t0), rp(x0 + 0.56, t0 + 0.27), rp(x0, t0 + 0.27)], 'iso-pv'));
+    const x0 = 8.6 + c * 0.62, t0 = 0.12 + r * 0.32;
+    out.push(poly([rp(x0, t0), rp(x0 + 0.56, t0), rp(x0 + 0.56, t0 + 0.29), rp(x0, t0 + 0.29)], 'iso-pv'));
   }
-  // ouvertures de la façade
-  out.push(facade(1.2, 1.75, 0.35, 2.45, 'mz-vitre' + allume));        // haute fenêtre étroite
-  out.push(facade(7.1, 7.9, 0.05, 2.25, 'mz-vitre' + allume));         // porte-fenêtre
-  out.push(facade(9.1, 9.65, 1.35, 2.05, 'mz-vitre petite' + allume)); // petite fenêtre
-  out.push(facade(10.2, 11.1, 0.75, 2.05, 'mz-cadre'));                  // fenêtre à cadre blanc
-  out.push(facade(10.3, 11.0, 0.85, 1.95, 'mz-vitre' + allume));
-  out.push(facade(12.3, 15.0, 0, 2.2, 'mz-garage'));                     // porte de garage
-  out.push(`<path d="${[0.45, 0.9, 1.35, 1.8].map((z) => line([[12.3, D + 0.02, z], [15, D + 0.02, z]])).join(' ')}" class="mz-lame"/>`);
-  // porche d'entrée carré en saillie, toit plat bordé de gris
-  out.push(box(4.1, 6.4, D, D + 1.3, 0, 3.05, 'mz-mur'));
-  out.push(box(4.0, 6.5, D - 0.1, D + 1.4, 2.85, 3.15, 'mz-bord'));
-  out.push(poly([[4.5, D + 1.31, 0], [6.0, D + 1.31, 0], [6.0, D + 1.31, 2.5], [4.5, D + 1.31, 2.5]], 'mz-ombre'));
-  out.push(poly([[4.85, D + 1.32, 0], [5.6, D + 1.32, 0], [5.6, D + 1.32, 2.1], [4.85, D + 1.32, 2.1]], 'mz-porte'));
-  // batterie (à droite de la porte de garage) et coffret électrique
-  out.push(box(15.25, 15.85, D, D + 0.35, 0.2, 1.8, 'iso-batt'));
-  out.push(poly([[15.35, D + 0.36, 0.32], [15.75, D + 0.36, 0.32], [15.75, D + 0.36, 0.32 + 1.36 * pct], [15.35, D + 0.36, 0.32 + 1.36 * pct]], 'iso-batt-niv ' + (pct <= 0.1 ? 'bas' : pct <= 0.25 ? 'moyen' : 'ok')));
-  out.push(box(11.45, 11.95, D, D + 0.22, 0.9, 1.65, 'iso-coffret'));
-  // pergola bioclimatique à gauche (poteaux + cadre + lames)
+  // ouvertures : façade de l'aile avant (y = F) et de l'aile longue (y = W)
+  const face = (y, x0, x1, z0, z1, cls) => poly([[x0, y + 0.01, z0], [x1, y + 0.01, z0], [x1, y + 0.01, z1], [x0, y + 0.01, z1]], cls);
+  out.push(face(F, 1.2, 1.75, 0.35, 2.45, 'mz-vitre' + allume));            // haute fenêtre étroite
+  out.push(face(W, 10.2, 10.75, 1.35, 2.05, 'mz-vitre petite' + allume));    // petite fenêtre
+  out.push(face(W, 11.3, 12.2, 0.75, 2.05, 'mz-cadre'));                     // fenêtre à cadre blanc
+  out.push(face(W, 11.4, 12.1, 0.85, 1.95, 'mz-vitre' + allume));
+  out.push(face(W, 13.4, 16.1, 0, 2.2, 'mz-garage'));                        // porte de garage
+  out.push(`<path d="${[0.45, 0.9, 1.35, 1.8].map((z) => line([[13.4, W + 0.02, z], [16.1, W + 0.02, z]])).join(' ')}" class="mz-lame"/>`);
+  // porche d'entrée dans l'angle du L, toit plat bordé de gris
+  out.push(box(W, W + 2.1, W, W + 2.6, 0, 3.05, 'mz-mur'));
+  out.push(box(W - 0.1, W + 2.2, W - 0.1, W + 2.7, 2.85, 3.15, 'mz-bord'));
+  out.push(face(W + 2.6, W + 0.35, W + 1.75, 0, 2.5, 'mz-ombre'));
+  out.push(face(W + 2.61, W + 0.7, W + 1.4, 0, 2.1, 'mz-porte'));
+  // batterie (à droite du garage) et coffret électrique
+  out.push(box(16.4, 17, W, W + 0.35, 0.2, 1.8, 'iso-batt'));
+  out.push(poly([[16.5, W + 0.36, 0.32], [16.9, W + 0.36, 0.32], [16.9, W + 0.36, 0.32 + 1.36 * pct], [16.5, W + 0.36, 0.32 + 1.36 * pct]], 'iso-batt-niv ' + (pct <= 0.1 ? 'bas' : pct <= 0.25 ? 'moyen' : 'ok')));
+  out.push(box(12.6, 13.1, W, W + 0.22, 0.9, 1.65, 'iso-coffret'));
+  // pergola bioclimatique à gauche de l'aile avant
   const pg = [];
-  [[-4.4, 0.6], [-4.4, D + 0.5], [-0.15, D + 0.5]].forEach(([x, y]) => pg.push(box(x - 0.12, x + 0.12, y - 0.12, y + 0.12, 0, 2.55, 'mz-pergola')));
-  pg.push(box(-4.55, 0, 0.45, D + 0.65, 2.45, 2.75, 'mz-pergola'));
-  pg.push(`<path d="${Array.from({ length: 13 }, (_, i) => line([[-4.45 + i * 0.35, 0.55, 2.76], [-4.45 + i * 0.35, D + 0.55, 2.76]])).join(' ')}" class="mz-lames-pg"/>`);
+  [[-4.4, 4.6], [-4.4, F + 0.5], [-0.15, F + 0.5]].forEach(([x, y]) => pg.push(box(x - 0.12, x + 0.12, y - 0.12, y + 0.12, 0, 2.55, 'mz-pergola')));
+  pg.push(box(-4.55, 0, 4.45, F + 0.65, 2.45, 2.75, 'mz-pergola'));
+  pg.push(`<path d="${Array.from({ length: 13 }, (_, i) => line([[-4.45 + i * 0.35, 4.55, 2.76], [-4.45 + i * 0.35, F + 0.55, 2.76]])).join(' ')}" class="mz-lames-pg"/>`);
   out.push(pg.join(''));
 
+  out.push(pylone);
   // lignes d'énergie
-  const [ax, ay] = P(px - 1.2, py, ph - 0.9), [bx, by] = P(16.2, D + 0.2, 2.2);
-  const reseauD = `M${pt(px - 1.2, py, ph - 0.9)} Q${((ax + bx) / 2).toFixed(1)},${(Math.max(ay, by) + 30).toFixed(1)} ${pt(16.2, D + 0.2, 2.2)} L${pt(12.2, D + 0.25, 2.2)} L${pt(11.8, D + 0.23, 1.65)}`;
-  const solD = line([[11.4, D + 0.33, ze + 0.05], [11.4, D + 0.25, 2.45], [11.6, D + 0.23, 1.65]]);
-  const battD = line([[15.25, D + 0.3, 1.1], [11.95, D + 0.25, 1.1]]);
-  const maisonD = line([[11.7, D + 0.25, 0.9], [11.7, D + 0.3, 0.45], [7.9, D + 0.3, 0.45]]);
+  const [ax, ay] = P(px - 1.2, py, ph - 0.9), [bx, by] = P(17.3, W + 0.2, 2.2);
+  const reseauD = `M${pt(px - 1.2, py, ph - 0.9)} Q${((ax + bx) / 2).toFixed(1)},${(Math.max(ay, by) + 30).toFixed(1)} ${pt(17.3, W + 0.2, 2.2)} L${pt(13.3, W + 0.25, 2.2)} L${pt(12.95, W + 0.23, 1.65)}`;
+  const solD = line([[12.5, W + 0.33, ze + 0.05], [12.5, W + 0.25, 2.45], [12.75, W + 0.23, 1.65]]);
+  const battD = line([[16.4, W + 0.3, 1.1], [13.1, W + 0.25, 1.1]]);
+  const maisonD = line([[12.85, W + 0.25, 0.9], [12.85, W + 0.3, 0.45], [W + 2.15, W + 0.3, 0.45], [W + 2.15, W + 1.6, 0.45]]);
   // Sans flux : ligne pleine et fixe. Avec flux : tirets qui défilent, dans le sens du tracé
   // ou à l'envers ; plus la puissance est forte, plus ils vont vite.
   const vit = (w) => (Math.abs(w) > 2000 ? 'v3' : Math.abs(w) > 600 ? 'v2' : 'v1');
@@ -1060,9 +1064,9 @@ function cardHousePlan() {
   const resTxt = e.revente > 0 ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= 20 ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
   const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
   out.push(pill(px, py, ph, resTxt, 'reseau', -30, -26));
-  out.push(pill(9.5, 3, zr, `Panneaux ${kw(e.prod)}`, 'solaire', 0, -28));
-  out.push(pill(15.5, D + 0.4, 0, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat', -20, 34));
-  out.push(pill(5.2, D + 1.4, 0, `Maison ${kw(e.maison)}`, 'maison', 0, 34));
+  out.push(pill(11, 3, zr, `Panneaux ${kw(e.prod)}`, 'solaire', 0, -28));
+  out.push(pill(16.7, W + 0.4, 0, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat', -20, 34));
+  out.push(pill(3, F, 0, `Maison ${kw(e.maison)}`, 'maison', 0, 34));
   const pad = 6;
   const vb = `${(mnX - pad).toFixed(0)} ${(mnY - pad).toFixed(0)} ${(mxX - mnX + 2 * pad).toFixed(0)} ${(mxY - mnY + 2 * pad).toFixed(0)}`;
 
