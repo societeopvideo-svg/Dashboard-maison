@@ -94,11 +94,14 @@ export class Homey {
   async insights(deviceId, capabilityId, resolution = 'today') {
     const uri = encodeURIComponent(`homey:device:${deviceId}`);
     const full = encodeURIComponent(`homey:device:${deviceId}:${capabilityId}`);
+    // Forme officielle (client homey-api) : /log/<homey:device:ID>/<homey:device:ID:capacité>/entry
     const tries = [
+      `/manager/insights/log/${uri}/${full}/entry?resolution=${resolution}`,
       `/manager/insights/log/${uri}/${encodeURIComponent(capabilityId)}/entry?resolution=${resolution}`,
       `/manager/insights/log/${full}/entry?resolution=${resolution}`,
     ];
-    for (const p of tries) {
+    let err0 = null; // réponse de la forme officielle : c'est elle qui fait foi pour le diagnostic
+    for (const [i, p] of tries.entries()) {
       try {
         const r = await this.req(p, { timeout: 12000 });
         const values = Array.isArray(r) ? r : r?.values;
@@ -109,11 +112,11 @@ export class Homey {
             .filter((v) => typeof v.v === 'number' && !Number.isNaN(v.t));
         }
       } catch (e) {
-        // 401/403 : la clé n'a pas le droit de lire l'historique ; 404 : pas de journal sous ce nom
-        if (e.status === 401 || e.status === 403) this.insightsErr = e.status;
-        else if (!e.status) this.insightsErr = 'reseau';
+        if (i === 0) err0 = e;
       }
     }
+    // 401/403 : la clé n'a pas le droit « Journaux » ; 404 : pas de journal sous ce nom ; sans code : réseau
+    this.insightsErr = !err0 ? null : err0.status === 401 || err0.status === 403 ? err0.status : err0.status || 'reseau';
     return null;
   }
 }

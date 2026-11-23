@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123a';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123a';
-import { icon, TABS } from './icons.js?v=20261123a';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123b';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123b';
+import { icon, TABS } from './icons.js?v=20261123b';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -460,7 +460,7 @@ function noteCourbe() {
   const e = st.curveErr;
   if (!e || !homey.ready) return '';
   const t = e === 401 || e === 403
-    ? 'La Homey refuse de donner l’historique : la clé API n’a pas le droit « Insights ». Ajoute-le à la clé (app Homey > Réglages > Clés API). En attendant, la courbe ne contient que les moments où l’iPad était allumé.'
+    ? 'La Homey refuse de donner l’historique : la clé API n’a pas le droit « Journaux ». Crée une clé avec ce droit (app Homey > Réglages > Clés API). En attendant, la courbe ne contient que les moments où l’iPad était allumé.'
     : st.curve ? 'Historique de la Homey non lu pour le moment : courbe gardée en mémoire, elle sera complétée à la prochaine lecture.'
     : 'Historique de la Homey non lu : la courbe ne contient que les moments où l’iPad était allumé.';
   return `<p class="small muted ek-note">${t}</p>`;
@@ -1829,7 +1829,7 @@ function bindSettings(el) {
       const [loc, dist] = await Promise.all([essai(S.homeyUrl), essai(S.homeyCloud)]);
       const h = new Homey(S.homeyUrl, S.cle, S.homeyCloud);
       const hist = (await h.insights(C.energie.linky, 'energy_power', 'today')) || (await h.insights(C.energie.linky, 'measure_power', 'today'));
-      const histTxt = hist?.length ? `OK (${hist.length} points depuis minuit)` : h.insightsErr === 401 || h.insightsErr === 403 ? 'refusé : ajoute le droit « Insights » à la clé' : 'non lu';
+      const histTxt = hist?.length ? `OK (${hist.length} points depuis minuit)` : h.insightsErr === 401 || h.insightsErr === 403 ? `refusé (code ${h.insightsErr}) : droit « Journaux » manquant sur la clé` : `non lu${h.insightsErr ? ` (code ${h.insightsErr})` : ''}`;
       out.innerHTML = `À la maison : <b>${loc}</b><br>Hors de la maison : <b>${dist}</b><br>Historique énergie : <b>${histTxt}</b>`;
       if (loc.startsWith('OK') || dist.startsWith('OK')) refreshSlow();
     } else if (a === 'geo') {
