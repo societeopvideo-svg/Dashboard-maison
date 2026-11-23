@@ -675,3 +675,56 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .chart .cb-lbls { margin-top: 6px; }
 
 .kpi.ok .lbl, .kpi.ok .val { color: var(--ok); }
+
+/* ---------- Batterie (rectangle qui se remplit) ---------- */
+.batt { display: flex; align-items: center; margin: 6px 0 14px; }
+.batt-corps { position: relative; flex: 1; height: 64px; border: 3px solid var(--text); border-radius: 14px; padding: 5px; opacity: .92; }
+.batt.big .batt-corps { height: 78px; }
+.batt-borne { width: 9px; height: 26px; margin-left: 3px; border-radius: 0 5px 5px 0; background: var(--text); opacity: .92; }
+.batt-niv { height: 100%; border-radius: 8px; background: var(--ok); transition: width .8s ease; min-width: 6px; }
+.batt-niv.moyen { background: var(--warn); }
+.batt-niv.bas { background: var(--alert); }
+.batt.charge .batt-niv { background-image: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%); background-size: 220% 100%; animation: batt-flux 2.4s linear infinite; }
+@keyframes batt-flux { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+.batt-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 600; color: var(--text); text-shadow: 0 1px 0 var(--surface); }
+.batt-pct small { font-size: 15px; margin-left: 2px; color: var(--muted); }
+.batt-eclair { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; color: var(--text); }
+.batt-eclair svg { width: 100%; height: 100%; }
+.batt-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.batt-info b { font-size: 20px; font-weight: 600; }
+.batt-jour { display: flex; align-items: center; gap: 14px; margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
+.batt-jour > div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.batt-jour i { width: 1px; align-self: stretch; background: var(--line); }
+.batt-jour b { font-size: 22px; font-weight: 600; }
+.batt-jour small { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+/* ---------- Plan de la maison ---------- */
+.hp { width: 100%; height: auto; display: block; }
+.hp-sol { stroke: var(--line); stroke-width: 2; }
+.hp-pylone path { fill: none; stroke: var(--grid); stroke-width: 2.5; stroke-linejoin: round; }
+.hp-mur { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.5; }
+.hp-mur.pignon { fill: color-mix(in srgb, var(--surface-2) 80%, var(--text) 6%); }
+.hp-pan { fill: color-mix(in srgb, var(--surface-2) 70%, var(--text) 14%); stroke: var(--line); stroke-width: 1.5; }
+.hp-toit { fill: none; stroke: var(--muted); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.hp-toit-plat { stroke: var(--muted); stroke-width: 3; stroke-linecap: round; }
+.hp-porte { fill: color-mix(in srgb, var(--surface-2) 75%, var(--text) 10%); stroke: var(--line); }
+.hp-lame { stroke: var(--line); stroke-width: 1; }
+.hp-pv { fill: color-mix(in srgb, #2E4A6B 85%, var(--surface)); stroke: color-mix(in srgb, #9FB4CC 60%, transparent); stroke-width: .8; }
+.hp-fenetre { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; transition: fill .6s; }
+.hp-fenetre.on { fill: color-mix(in srgb, var(--sun) 35%, var(--surface)); }
+.hp-croisee { stroke: var(--line); stroke-width: 2; fill: none; }
+.hp-batt { fill: var(--surface); stroke: var(--text); stroke-width: 2; opacity: .85; }
+.hp-batt-niv { fill: var(--ok); }
+.hp-noeud { fill: var(--surface); stroke: var(--accent); stroke-width: 3; }
+.hp-l { fill: none; stroke-width: 3.5; stroke-linecap: round; opacity: .3; }
+.hp-l.on { opacity: 1; stroke-dasharray: 2 10; animation: hp-flux 1.1s linear infinite; }
+.hp-l.on.rev { animation-direction: reverse; }
+@keyframes hp-flux { to { stroke-dashoffset: -12; } }
+@media (prefers-reduced-motion: reduce) { .hp-l.on, .batt.charge .batt-niv { animation: none; } .hp-l.on { stroke-dasharray: none; } }
+.hp-l.reseau { stroke: #4C8DD6; } .hp-l.solaire { stroke: var(--sun); } .hp-l.bat { stroke: var(--ok); } .hp-l.maison { stroke: var(--accent); }
+.hp-vals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 6px; }
+@media (max-width: 760px) { .hp-vals { grid-template-columns: 1fr 1fr; } }
+.hp-v { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); border-top: 3px solid transparent; }
+.hp-v b { font-size: 22px; font-weight: 600; }
+.hp-v.reseau { border-top-color: #4C8DD6; } .hp-v.solaire { border-top-color: var(--sun); } .hp-v.bat { border-top-color: var(--ok); } .hp-v.maison { border-top-color: var(--accent); }
+.batt-card .lbl, .hp-v .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }

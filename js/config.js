@@ -137,6 +137,8 @@ export const DEFAUTS = {
   prixKwh: 0.1927,
   aboMois: 19.56,
   coefFHE: 1.04,
+  // 28 % = 1,70 kWh restants dans l'app SolaX → environ 6,1 kWh utiles
+  battKwh: 6.1,
   iconStyle: 'line',
   theme: 'auto',
   commune: '',

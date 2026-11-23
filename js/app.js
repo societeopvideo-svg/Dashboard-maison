@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123f';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123f';
-import { icon, TABS } from './icons.js?v=20261123f';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123g';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123g';
+import { icon, TABS } from './icons.js?v=20261123g';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -259,7 +259,12 @@ function energyNow() {
   // Part de la consommation de la maison couverte par le solaire (100 % = aucun achat)
   const conso = prod == null || achat == null ? null : Math.max(0, prod - revente) + achat;
   const couv = conso && conso > 50 ? clamp(Math.max(0, prod - revente) / conso, 0, 1) : null;
-  return { hoy, fhe, prod, achat, revente, couv, conso, kwhJour, aboJour, cout, auto, prodJourKwh: prodJour == null ? null : prodJour * (1 + S.coefFHE) };
+  // Batterie SolaX : > 0 = elle se charge (elle prend de l'énergie), < 0 = elle alimente la maison
+  const batt = cap(C.energie.batterie, 'measure_power');
+  const battPct = cap(C.energie.batterie, 'measure_battery');
+  // Ce que la maison consomme vraiment : réseau + panneaux − surplus envoyé − ce qui part dans la batterie
+  const maison = prod == null || achat == null ? null : Math.max(0, achat + prod - revente - (batt ?? 0));
+  return { hoy, fhe, prod, achat, revente, couv, conso, maison, batt, battPct, kwhJour, aboJour, cout, auto, prodJourKwh: prodJour == null ? null : prodJour * (1 + S.coefFHE) };
 }
 
 /* ---------- Alertes ---------- */
@@ -281,7 +286,7 @@ function alerts() {
     A.cameras.forEach((id) => { if (cap(id, 'alarm_motion') === true) out.push({ lvl: 'warn', txt: `Mouvement : ${nm(id)}`, sub: 'Maison vide' }); });
   }
   visible().forEach((d) => {
-    const b = d.capabilitiesObj?.measure_battery?.value;
+    const b = d.class === 'battery' ? null : d.capabilitiesObj?.measure_battery?.value; // batterie maison : pas une pile
     if (typeof b !== 'number') return;
     if (b < A.batterie.urgente) out.push({ lvl: 'warn', txt: 'Pile à remplacer maintenant', sub: `${nm(d.id)} · ${b} %` });
     else if (b < A.batterie.faible) out.push({ lvl: 'info', txt: 'Pile à prévoir', sub: `${nm(d.id)} · ${b} %` });
@@ -884,7 +889,7 @@ function viewHeat() {
 /* Piles et batteries : vert au-dessus de 15 %, orange de 6 à 15 %, rouge à 5 % et moins */
 function cardBatteries() {
   const list = visible()
-    .filter((d) => typeof d.capabilitiesObj?.measure_battery?.value === 'number')
+    .filter((d) => typeof d.capabilitiesObj?.measure_battery?.value === 'number' && d.class !== 'battery') // pas la batterie de la maison
     .map((d) => ({ d, b: Math.round(d.capabilitiesObj.measure_battery.value) }))
     .sort((x, y) => x.b - y.b);
   if (!list.length) return '';
@@ -901,6 +906,124 @@ function cardBatteries() {
 }
 
 /* Énergie détaillée */
+/* ---------- Batterie et plan de la maison ---------- */
+// kWh chargés / déchargés aujourd'hui : compteur actuel − compteur à minuit.
+// Valeur de minuit lue dans l'historique Homey ; sinon, premier relevé vu aujourd'hui (gardé sur l'iPad).
+const battMinuit = { jour: null, c0: null, d0: null, depuis: null, lu: 0 };
+async function refreshBattJour() {
+  const B = C.energie.batterie;
+  if (!B || !homey.ready || !dev(B)) return;
+  const jour = new Date().toDateString();
+  if (battMinuit.jour === jour && battMinuit.depuis === 0) return; // déjà la vraie valeur de minuit
+  if (battMinuit.jour === jour && Date.now() - battMinuit.lu < 15 * 60e3) return;
+  battMinuit.lu = Date.now();
+  const premier = async (c) => { const r = await homey.insights(B, c, 'today'); return r?.length ? r[0] : null; };
+  const [c, d] = await Promise.all([premier('meter_power.charged'), premier('meter_power.discharged')]);
+  const minuit = new Date(); minuit.setHours(0, 0, 0, 0);
+  if (c && d && c.t - minuit.getTime() < 20 * 60e3) Object.assign(battMinuit, { jour, c0: c.v, d0: d.v, depuis: 0 });
+  else {
+    const g = store.get('battJour', null);
+    if (g && g.jour === jour) Object.assign(battMinuit, g);
+    else {
+      const c1 = cap(B, 'meter_power.charged'), d1 = cap(B, 'meter_power.discharged');
+      if (typeof c1 !== 'number' || typeof d1 !== 'number') return;
+      Object.assign(battMinuit, { jour, c0: c1, d0: d1, depuis: Date.now() });
+      store.set('battJour', { jour, c0: c1, d0: d1, depuis: Date.now() });
+    }
+  }
+  maybeRender();
+}
+function battJour() {
+  const B = C.energie.batterie;
+  const c = cap(B, 'meter_power.charged'), d = cap(B, 'meter_power.discharged');
+  if (battMinuit.jour !== new Date().toDateString() || typeof c !== 'number' || battMinuit.c0 == null) return null;
+  return { charge: Math.max(0, c - battMinuit.c0), decharge: Math.max(0, d - battMinuit.d0), depuis: battMinuit.depuis };
+}
+
+// Batterie dessinée : un rectangle, et dedans une barre qui se remplit avec la charge
+function battGauge(pct, etat, big = true) {
+  const p = clamp(Number(pct) || 0, 0, 100);
+  const niv = p <= 10 ? 'bas' : p <= 25 ? 'moyen' : 'ok';
+  return `<div class="batt ${big ? 'big' : ''} ${etat}" role="img" aria-label="Batterie ${Math.round(p)} %">
+    <div class="batt-corps"><div class="batt-niv ${niv}" style="width:${p}%"></div><span class="batt-pct">${nf(p, 0)}<small>%</small></span>${etat === 'charge' ? `<span class="batt-eclair">${icon('energie', 'line')}</span>` : ''}</div><div class="batt-borne"></div></div>`;
+}
+function cardBattery() {
+  const B = C.energie.batterie;
+  if (!B || !dev(B)) return '';
+  const e = energyNow();
+  const w = e.batt;
+  const etat = w == null ? 'repos' : w > 30 ? 'charge' : w < -30 ? 'decharge' : 'repos';
+  const lib = { charge: 'En charge', decharge: 'Alimente la maison', repos: 'Au repos' }[etat];
+  const restant = e.battPct == null ? null : (e.battPct / 100) * S.battKwh;
+  const j = battJour();
+  const depuis = j?.depuis ? ` <span class="muted">(depuis ${hhmm(j.depuis)})</span>` : '';
+  return `<div class="card batt-card"><div class="section-head"><h2>Batterie</h2><span class="tag ${etat === 'repos' ? '' : 'accent'}">${lib}</span></div>
+    ${battGauge(e.battPct, etat)}
+    <div class="batt-info"><div><div class="lbl">Énergie restante</div><b>${restant == null ? '–' : `≈ ${nf(restant, 1)} kWh`}</b><div class="small muted">sur ${nf(S.battKwh, 1)} kWh</div></div>
+      <div><div class="lbl">${etat === 'decharge' ? 'Donne' : 'Reçoit'}</div><b>${w == null ? '–' : watts(Math.abs(w))}</b><div class="small muted">${cap(B, 'measure_temperature') != null ? `${nf(cap(B, 'measure_temperature'), 0)} °C · ` : ''}${cap(B, 'measure_voltage') != null ? `${nf(cap(B, 'measure_voltage'), 0)} V` : ''}</div></div></div>
+    <div class="batt-jour"><div><span class="lbl">Chargé aujourd’hui</span><b>${j ? nf(j.charge, 2) : '–'}<small> kWh</small></b></div><i></i><div><span class="lbl">Déchargé aujourd’hui</span><b>${j ? nf(j.decharge, 2) : '–'}<small> kWh</small></b></div></div>${depuis ? `<p class="small muted" style="margin:6px 0 0">Comptage${depuis}</p>` : ''}
+  </div>`;
+}
+
+// Plan de la maison : réseau, panneaux, batterie et maison reliés par des lignes
+// qui s'animent dans le sens où passe l'énergie.
+function cardHousePlan() {
+  const e = energyNow();
+  const sens = (w) => (w == null || Math.abs(w) < 20 ? 'off' : 'on');
+  const reseauW = e.revente > 0 ? -e.revente : e.achat ?? null; // > 0 : on achète ; < 0 : on envoie
+  const fl = {
+    reseau: sens(reseauW) === 'off' ? 'off' : reseauW > 0 ? 'on' : 'on rev',
+    solaire: sens(e.prod),
+    batt: sens(e.batt) === 'off' ? 'off' : e.batt < 0 ? 'on' : 'on rev', // tracé batterie → compteur
+    maison: sens(e.maison),
+  };
+  // Maison vue de trois quarts : long pan de toit visible (panneaux dessus), pignon à droite.
+  // Pan de toit = parallélogramme O + s·a + t·b ; les panneaux sont posés dans ce plan.
+  const O = [300, 172], a = [140, 0], b = [70, -62];
+  const pt = (s1, t1) => [O[0] + s1 * a[0] + t1 * b[0], O[1] + s1 * a[1] + t1 * b[1]];
+  const pan = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) {
+    const s0 = 0.07 + c * 0.175, t0 = 0.1 + r * 0.28, ds = 0.155, dt = 0.25;
+    const q = [pt(s0, t0), pt(s0 + ds, t0), pt(s0 + ds, t0 + dt), pt(s0, t0 + dt)];
+    pan.push(`<path d="M${q.map((x) => x.map((v) => v.toFixed(1)).join(',')).join(' L')} Z" class="hp-pv"/>`);
+  }
+  const j = battJour();
+  const exp = cap(C.energie.linky, 'meter_power.exported');
+  const expJ = st.curve?.exp0 != null && typeof exp === 'number' && exp - st.curve.exp0 < 60 ? Math.max(0, exp - st.curve.exp0) : null;
+  const maisonJ = e.kwhJour == null || e.prodJourKwh == null ? null : Math.max(0, e.kwhJour + e.prodJourKwh - (expJ ?? 0) - (j ? j.charge - j.decharge : 0));
+  const bloc = (cls, lbl, w, jour, sous) => `<div class="hp-v ${cls}"><span class="lbl">${lbl}</span><b>${w == null ? '–' : watts(Math.abs(w))}</b><span class="small muted">${sous}</span><span class="small">${jour}</span></div>`;
+  return `<div class="card span-2 hp-card"><div class="section-head"><h2>La maison en direct</h2><span class="small muted">les lignes bougent dans le sens de l’énergie</span></div>
+  <svg class="hp" viewBox="20 60 600 250" role="img" aria-label="Plan énergie de la maison">
+    <line x1="10" x2="630" y1="300" y2="300" class="hp-sol"/>
+    <!-- pylône du réseau -->
+    <g class="hp-pylone"><path d="M60,300 L78,120 L96,300 M66,240 L90,240 M70,190 L86,190 M50,140 L106,140 M56,160 L100,160 M66,240 L86,190 M90,240 L70,190"/></g>
+    <!-- garage -->
+    <path d="M190,300 V214 H300 V300 Z" class="hp-mur"/><path d="M180,214 H306" class="hp-toit-plat"/>
+    <path d="M210,300 V238 H280 V300" class="hp-porte"/>${[248, 258, 268, 278, 288].map((y) => `<line x1="210" x2="280" y1="${y}" y2="${y}" class="hp-lame"/>`).join('')}
+    <!-- maison : mur long, pignon, toit -->
+    <path d="M300,300 V172 H440 V300 Z" class="hp-mur"/>
+    <path d="M440,300 V172 L510,110 L580,172 V300 Z" class="hp-mur pignon"/>
+    <path d="M300,172 L440,172 L510,110 L370,110 Z" class="hp-pan"/>
+    <path d="M292,178 L440,178 M440,178 L510,116 L588,180" class="hp-toit"/>
+    ${pan.join('')}
+    <rect x="482" y="200" width="56" height="62" rx="3" class="hp-fenetre ${fl.maison}"/><path d="M510,200 V262 M482,231 H538" class="hp-croisee"/>
+    <!-- batterie murale -->
+    <rect x="316" y="238" width="28" height="48" rx="4" class="hp-batt"/><rect x="321" y="${(281 - 38 * clamp((e.battPct ?? 0) / 100, 0, 1)).toFixed(1)}" width="18" height="${(38 * clamp((e.battPct ?? 0) / 100, 0, 1)).toFixed(1)}" rx="2" class="hp-batt-niv"/>
+    <!-- lignes d'énergie -->
+    <path d="M100,142 Q 250 200 400 258" class="hp-l reseau ${fl.reseau}"/>
+    <path d="M405,150 V256" class="hp-l solaire ${fl.solaire}"/>
+    <path d="M344,262 H398" class="hp-l bat ${fl.batt}"/>
+    <path d="M412,262 H468 V240 H482" class="hp-l maison ${fl.maison}"/>
+    <circle cx="405" cy="262" r="7" class="hp-noeud"/>
+  </svg>
+  <div class="hp-vals">
+    ${bloc('reseau', e.revente > 0 ? 'Réseau · envoi' : 'Réseau · achat', reseauW, `${nf(e.kwhJour, 1)} kWh achetés${expJ != null ? ` · ${nf(expJ, 1)} envoyés` : ''}`, 'aujourd’hui')}
+    ${bloc('solaire', 'Panneaux', e.prod, `${nf(e.prodJourKwh, 1)} kWh produits`, 'dont FHE estimé')}
+    ${bloc('bat', e.batt > 30 ? 'Batterie · charge' : e.batt < -30 ? 'Batterie · décharge' : 'Batterie', e.batt, j ? `+${nf(j.charge, 1)} / −${nf(j.decharge, 1)} kWh` : '–', `${e.battPct == null ? '–' : nf(e.battPct, 0)} %`)}
+    ${bloc('maison', 'Maison', e.maison, `${nf(maisonJ, 1)} kWh consommés`, 'estimé')}
+  </div></div>`;
+}
+
 function viewEnergy() {
   const e = energyNow();
   const k = (c) => cap(C.energie.compteur, c);
@@ -914,6 +1037,7 @@ function viewEnergy() {
     .slice(0, 8);
   return `<h1>Énergie</h1>
   <div class="grid">
+    ${cardHousePlan()}${cardBattery()}
     ${cardEnergy(260).replace('tap" data-act="tab" data-id="energie"', '"')}
     <div class="card"><h2>Aujourd’hui</h2><div class="stack">
       <div class="row between"><span class="muted">Acheté</span><b>${nf(k('meter_kwh_this_day'), 1)} kWh</b></div>
@@ -1745,6 +1869,7 @@ async function openSettings(scroll = 0) {
     <div class="card set-card"><h2>Électricité</h2>
       <div class="field"><label>Prix du kWh TTC (€)</label><input type="number" step="0.0001" min="0" data-s="prixKwh" value="${S.prixKwh}"></div>
       <div class="field"><label>Abonnement TTC (€/mois)</label><input type="number" step="0.01" min="0" data-s="aboMois" value="${S.aboMois}"></div>
+      <div class="field"><label>Capacité de la batterie (kWh)</label><input type="number" step="0.1" min="0" data-s="battKwh" value="${S.battKwh}"><span class="hint">Sert à calculer l’énergie restante</span></div>
       <div class="field"><label>Coefficient FHE</label><input type="number" step="0.01" min="0" max="3" data-s="coefFHE" value="${S.coefFHE}"><span class="hint">FHE = Hoymiles × ce nombre</span></div>
     </div>
 
@@ -1782,7 +1907,7 @@ function bindSettings(el) {
       if (k !== 'cle' && val && !/^https?:\/\//.test(val)) val = 'https://' + val;
       S[k] = val; saveSettings();
       homey = new Homey(S.homeyUrl, S.cle, S.homeyCloud);
-    } else if (['prixKwh', 'aboMois', 'coefFHE'].includes(k)) {
+    } else if (['prixKwh', 'aboMois', 'coefFHE', 'battKwh'].includes(k)) {
       const n = parseFloat(String(t.value).replace(',', '.'));
       if (!Number.isNaN(n)) { S[k] = n; saveSettings(); }
     } else if (k === 'reveilCapteur') { S.reveilCapteur = t.value; saveSettings(); }
@@ -1984,11 +2109,11 @@ $('#btn-full').addEventListener('click', toggleFull);
 paintFullBtn();
 tick(); setInterval(tick, 10e3);
 render();
-refresh().then(() => { refreshSlow(); refreshCurve(true); refreshCameras(true); });
+refresh().then(() => { refreshSlow(); refreshCurve(true); refreshCameras(true); refreshBattJour(); });
 refreshWeather(true);
 setInterval(refresh, 5e3);
 setInterval(refreshSlow, 10 * 60e3);
-setInterval(() => { refreshWeather(); refreshCurve(); refreshCameras(); }, 60e3);
+setInterval(() => { refreshWeather(); refreshCurve(); refreshCameras(); refreshBattJour(); }, 60e3);
 // Au réveil de l'iPad (écran déverrouillé, retour dans Safari ou l'app) : on relit tout de suite
 // l'historique de la Homey, qui a continué d'enregistrer pendant la veille → courbe sans trou
 const auReveil = () => { if (!document.hidden) { refresh(); refreshWeather(); refreshCurve(true); } };
