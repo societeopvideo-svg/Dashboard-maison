@@ -21,7 +21,7 @@ export class Homey {
     // à distance : un essai rapide de l'adresse locale de temps en temps (retour à la maison)
     if (this.distance && this.local && Date.now() - this.probeAt > 60e3) {
       this.probeAt = Date.now();
-      try { await this.once(this.local, '/manager/devices/device/?probe=1', { timeout: 2500 }); this.mode = 'local'; } catch { /* toujours dehors */ }
+      try { await this.once(this.local, '/manager/zones/zone/', { timeout: 3000 }); this.mode = 'local'; } catch { /* toujours dehors */ }
     }
     try {
       return await this.once(this.url, path, opts);
@@ -38,7 +38,8 @@ export class Homey {
 
   async once(base, path, { method = 'GET', body, timeout } = {}) {
     // l'adresse locale ne répond pas hors de la maison : on n'attend pas longtemps
-    timeout = timeout || (base === this.local && this.cloud ? 4000 : 10000);
+    // (8 s : la liste complète des appareils peut prendre quelques secondes à la maison)
+    timeout = timeout || (base === this.local && this.cloud ? 8000 : 10000);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeout);
     try {
@@ -78,11 +79,19 @@ export class Homey {
 
   // Image d'une caméra (snapshot) : l'adresse demande la clé, donc on passe par un blob.
   async imageURL(path) {
-    const res = await fetch(`${this.url}${path.startsWith('/api') ? '' : '/api'}${path}`, {
-      headers: { Authorization: `Bearer ${this.key}` },
-    });
-    if (!res.ok) throw new Error(`image ${res.status}`);
-    return URL.createObjectURL(await res.blob());
+    const get = async (base) => {
+      const res = await fetch(`${base}${path.startsWith('/api') ? '' : '/api'}${path}`, {
+        headers: { Authorization: `Bearer ${this.key}` },
+      });
+      if (!res.ok) { const e = new Error(`image ${res.status}`); e.status = res.status; throw e; }
+      return URL.createObjectURL(await res.blob());
+    };
+    try { return await get(this.url); } catch (e) {
+      // pas de réponse : on tente l'autre adresse (maison / cloud)
+      const autre = this.url === this.local ? this.cloud : this.local;
+      if (e.status || !autre) throw e;
+      return get(autre);
+    }
   }
 
   triggerFlow(flowId) {
@@ -117,6 +126,7 @@ export class Homey {
     }
     // 401/403 : la clé n'a pas le droit « Journaux » ; 404 : pas de journal sous ce nom ; sans code : réseau
     this.insightsErr = !err0 ? null : err0.status === 401 || err0.status === 403 ? err0.status : err0.status || 'reseau';
+    this.insightsDetail = err0 ? String(err0.detail || err0.message || '').slice(0, 200) : '';
     return null;
   }
 }

@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123b';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123b';
-import { icon, TABS } from './icons.js?v=20261123b';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123d';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123d';
+import { icon, TABS } from './icons.js?v=20261123d';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -583,7 +583,7 @@ async function refreshCameras(force = false) {
       const url = await homey.imageURL(p.url);
       if (cur?.url) URL.revokeObjectURL(cur.url);
       camImg[id] = { url, at: p.at, fetched: Date.now() };
-    } catch { camImg[id] = { ...(cur || {}), err: 'load' }; }
+    } catch (e) { camImg[id] = { ...(cur || {}), err: 'load', code: e.status || null }; }
   }));
   maybeRender();
 }
@@ -596,7 +596,7 @@ function cardCameras() {
     const bat = cap(id, 'measure_battery');
     const body = im.url
       ? `<img src="${im.url}" alt="">`
-      : `<div class="cam-empty">${im.err === 'none' ? 'Pas d’image transmise à Homey' : im.err ? 'Image indisponible' : 'Chargement…'}</div>`;
+      : `<div class="cam-empty">${im.err === 'none' ? 'Pas d’image transmise à Homey' : im.err ? (im.code === 401 || im.code === 403 ? `Image refusée par la Homey (code ${im.code})` : im.code ? `Image indisponible (code ${im.code})` : `Image indisponible (Homey injoignable${homey.distance ? ' à distance' : ''})`) : 'Chargement…'}</div>`;
     return `<button class="cam ${motion ? 'motion' : ''}" data-act="cam" data-id="${id}">
       ${body}
       <span class="cam-info"><span>${esc(nm(id))}</span><span>${motion ? '<b class="tag warn">Mouvement</b> ' : ''}${typeof bat === 'number' ? bat + ' %' : ''}${im.at ? ' · ' + hhmm(im.at) : ''}</span></span>
@@ -1830,7 +1830,8 @@ function bindSettings(el) {
       const h = new Homey(S.homeyUrl, S.cle, S.homeyCloud);
       const hist = (await h.insights(C.energie.linky, 'energy_power', 'today')) || (await h.insights(C.energie.linky, 'measure_power', 'today'));
       const histTxt = hist?.length ? `OK (${hist.length} points depuis minuit)` : h.insightsErr === 401 || h.insightsErr === 403 ? `refusé (code ${h.insightsErr}) : droit « Journaux » manquant sur la clé` : `non lu${h.insightsErr ? ` (code ${h.insightsErr})` : ''}`;
-      out.innerHTML = `À la maison : <b>${loc}</b><br>Hors de la maison : <b>${dist}</b><br>Historique énergie : <b>${histTxt}</b>`;
+      const det = !hist?.length && h.insightsDetail ? `<br><span class="muted">Réponse de la Homey : ${esc(h.insightsDetail)}</span>` : '';
+      out.innerHTML = `À la maison : <b>${loc}</b><br>Hors de la maison : <b>${dist}</b><br>Historique énergie : <b>${histTxt}</b>${det}<br><span class="muted">Clé utilisée : …${esc(S.cle.slice(-4))}</span>`;
       if (loc.startsWith('OK') || dist.startsWith('OK')) refreshSlow();
     } else if (a === 'geo') {
       const q = el.querySelector('[data-s="communeQ"]').value.trim();
