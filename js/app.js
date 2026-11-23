@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123p';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123p';
-import { icon, TABS } from './icons.js?v=20261123p';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123q';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123q';
+import { icon, TABS } from './icons.js?v=20261123q';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -155,12 +155,13 @@ async function refreshCurve(force = false) {
   // Historique enregistré par la Homey depuis minuit : continu même quand l'iPad était en veille
   const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c, 'today'); if (r && r.length) return r; } return null; };
   const P = ['measure_power', 'energy_power'];
-  const [sol, impI, expo, achatVA, injVA] = await Promise.all([
+  const [sol, impI, expo, achatVA, injVA, battH] = await Promise.all([
     hist(C.energie.solaire, P),
     hist(C.energie.linky, ['meter_power.imported']),
     hist(C.energie.linky, ['meter_power.exported']),
     hist(C.energie.linky, P),
     hist(C.energie.linky, ['apparent_power_instant_inject_capability']),
+    C.energie.batterie ? hist(C.energie.batterie, P) : null,
   ]);
   // vraie puissance achetée / revendue = vitesse des index (la puissance apparente surestime l'achat)
   const achat = impI?.length > 1 ? deriveW(impI) : achatVA;
@@ -171,7 +172,7 @@ async function refreshCurve(force = false) {
   const jour = new Date().toDateString();
   const old = st.curve && st.curve.jour === jour ? st.curve : null;
   if (sol && achat) {
-    st.curve = { sol: unirPts(old?.sol, sol), achat: unirPts(old?.achat, achat), inj: unirPts(old?.inj, inj || []), exp0: old?.exp0 ?? expo?.[0]?.v ?? null, jour };
+    st.curve = { sol: unirPts(old?.sol, sol), achat: unirPts(old?.achat, achat), inj: unirPts(old?.inj, inj || []), batt: unirPts(old?.batt, battH || []), exp0: old?.exp0 ?? expo?.[0]?.v ?? null, jour };
     store.set('courbeJour2', st.curve);
   }
   st.curveErr = sol && achat ? null : homey.insightsErr || 'vide';
@@ -197,7 +198,7 @@ function sample() {
   if (arr.length && now - arr[arr.length - 1].t < 60e3) return;
   const e = energyNow();
   if (e.prod == null && e.achat == null) return;
-  arr.push({ t: now, p: e.prod ?? 0, a: e.achat ?? 0, r: e.revente ?? 0 });
+  arr.push({ t: now, p: e.prod ?? 0, a: e.achat ?? 0, r: e.revente ?? 0, b: e.batt ?? 0 });
   store.set(key, arr.slice(-1500));
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
@@ -479,12 +480,14 @@ function curveSeries() {
     const prod = prolonge(prodH, directE.map((x) => ({ t: x.t, v: x.p })));
     const auto = prolonge(autoH, directE.map((x) => ({ t: x.t, v: Math.max(0, x.p - x.r) })));
     const achatC = prolonge(achat, directE.map((x) => ({ t: x.t, v: x.r > 20 ? 0 : x.a })));
+    // batterie : seule la décharge compte ici (ce qu'elle fournit à la maison à la place du réseau)
+    const battD = prolonge((st.curve.batt || []).map((p) => ({ t: p.t, v: Math.max(0, -p.v) })), directE.map((x) => ({ t: x.t, v: Math.max(0, -(x.b || 0)) })));
     const dans = (l) => l.filter((p) => p.t >= t0);
-    return { day0, t0, t1, prod: dans(prod), auto: dans(auto), achat: dans(achatC), src: 'Homey' };
+    return { day0, t0, t1, prod: dans(prod), auto: dans(auto), achat: dans(achatC), batt: dans(battD), src: 'Homey' };
   }
   const arr = store.get('samples.' + jourLocal(), []).filter((x) => x.t >= t0);
   if (arr.length < 3) return null;
-  return { day0, t0, t1, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
+  return { day0, t0, t1, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), batt: arr.map((s) => ({ t: s.t, v: Math.max(0, -(s.b || 0)) })), src: 'iPad' };
 }
 
 // Graphique de la journée, façon Ecojoko : minuit → minuit, se remplit au fil de la journée.
@@ -495,7 +498,11 @@ function chartSVG(series, h = 190) {
   if (!series) return '<p class="small muted">La courbe apparaîtra au fil de la journée.</p>';
   const W = 600, H = h, t0 = series.t0 ?? series.day0.getTime(), span = (series.t1 ?? t0 + 864e5) - t0;
   const surplus = series.prod.map((p, i) => ({ t: p.t, v: Math.max(0, p.v - (series.auto?.[i]?.v ?? 0)) }));
-  const maxH = Math.max(500, ...series.achat.map((p) => p.v));
+  // la batterie est en bas de la pile, l'achat au réseau posé dessus : chaque source reste visible
+  const batt = series.batt || [];
+  const proche = (arr, t) => { let b = 0, d = 6 * 60e3; for (const p of arr) { const x = Math.abs(p.t - t); if (x < d) { d = x; b = p.v; } } return b; };
+  const achatHaut = series.achat.map((p) => ({ t: p.t, bas: proche(batt, p.t), v: p.v + proche(batt, p.t) }));
+  const maxH = Math.max(500, ...achatHaut.map((p) => p.v), ...batt.map((p) => p.v));
   const maxB = Math.max(500, ...series.prod.map((p) => p.v));
   const step = pas(Math.max(maxH, maxB) / 2);
   const haut = Math.ceil(maxH / step) * step, bas = Math.ceil(maxB / step) * step;
@@ -504,6 +511,8 @@ function chartSVG(series, h = 190) {
   const X = (t) => (((t - t0) / span) * W).toFixed(1);
   const aire = (pts, sgn) => (pts.length ? `M${X(pts[0].t)},${axe.toFixed(1)} ` + pts.map((p) => `L${X(p.t)},${Y(sgn * p.v)}`).join(' ') + ` L${X(pts[pts.length - 1].t)},${axe.toFixed(1)} Z` : '');
   const ligne = (pts, sgn) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(sgn * p.v)}`).join(' ');
+  // bande entre deux courbes (de « bas » à « v ») : l'achat posé au-dessus de la batterie
+  const bande = (pts) => (pts.length ? `M${pts.map((p) => `${X(p.t)},${Y(p.v)}`).join(' L')} L${pts.slice().reverse().map((p) => `${X(p.t)},${Y(p.bas)}`).join(' L')} Z` : '');
   // graduations en watts (texte à gauche, hors du dessin)
   const grad = [];
   for (let v = haut; v >= -bas; v -= step) grad.push(v);
@@ -514,8 +523,10 @@ function chartSVG(series, h = 190) {
   return `<div class="ek"><div class="ek-y">${grad.filter((v) => v !== -bas).map((v) => `<span style="top:${((Y(v) / H) * 100).toFixed(2)}%">${v === 0 ? '0' : `${nf(v, 0)} W`}</span>`).join('')}</div>
     <div class="ek-plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">
       ${lignesG}${lignesH}
-      <path d="${aire(series.achat, 1)}" class="ek-achat"/>
-      <path d="${ligne(series.achat, 1)}" class="ek-achat-l" vector-effect="non-scaling-stroke"/>
+      <path d="${aire(batt, 1)}" class="ek-batt"/>
+      <path d="${ligne(batt, 1)}" class="ek-batt-l" vector-effect="non-scaling-stroke"/>
+      <path d="${bande(achatHaut)}" class="ek-achat"/>
+      <path d="${ligne(achatHaut, 1)}" class="ek-achat-l" vector-effect="non-scaling-stroke"/>
       <path d="${aire(series.prod, -1)}" class="ek-surplus"/>
       <path d="${aire(series.auto || [], -1)}" class="ek-auto"/>
       <path d="${ligne(series.prod, -1)}" class="ek-prod-l" vector-effect="non-scaling-stroke"/>
@@ -552,9 +563,9 @@ function cardEnergy(h = 190) {
       <div class="kpi ${autoconso || e.revente > 0 ? 'ok' : ''}"><div class="lbl">${sens.lbl}</div><div class="val">${sens.v == null ? '0<span class="unit">W acheté</span>' : watts(sens.v)}</div><div class="small muted">${autoconso || e.revente > 0 ? 'maison 100 % solaire en ce moment' : `${nf(e.kwhJour, 1)} kWh achetés aujourd’hui`}</div></div>
       <div class="kpi"><div class="lbl">Coût du jour</div><div class="val">${nf(e.cout, 2)}<span class="unit">€</span></div><div class="small muted">abonnement compris</div></div>
     </div>
-    <div class="ek-tot"><span>Aujourd’hui</span><b>${nf(e.kwhJour, 1)}<small> kWh achetés</small></b><i></i><b>${surplusJ == null ? '–' : nf(surplusJ, 2)}<small> kWh de surplus</small></b></div>
+    <div class="ek-tot"><span>Aujourd’hui</span><b>${nf(e.kwhJour, 1)}<small> kWh achetés</small></b><i></i><b>${surplusJ == null ? '–' : nf(surplusJ, 2)}<small> kWh de surplus</small></b>${battJour() ? `<i></i><b class="ek-tot-batt">${nf(battJour().decharge, 1)}<small> kWh fournis par la batterie · ≈ ${nf(battJour().decharge * S.prixKwh, 2)} € économisés</small></b>` : ''}</div>
     <div class="chart">${chartSVG(curveSeries(), h)}</div>${noteCourbe()}
-    <div class="legend"><span><i class="lg-achat"></i>Achat au réseau</span><span><i style="background:var(--ok);opacity:.7"></i>Autoconsommation</span><span><i class="lg-surplus"></i>Surplus envoyé au réseau</span><span><i class="lg-prod"></i>Production (Hoymiles + FHE estimé)</span></div>
+    <div class="legend"><span><i class="lg-batt"></i>Batterie (évite l’achat)</span><span><i class="lg-achat"></i>Achat au réseau</span><span><i style="background:var(--ok);opacity:.7"></i>Autoconsommation</span><span><i class="lg-surplus"></i>Surplus envoyé au réseau</span><span><i class="lg-prod"></i>Production (Hoymiles + FHE estimé)</span></div>
   </div>`;
 }
 
@@ -1401,7 +1412,7 @@ function liveSample() {
   const t = Date.now();
   const e = energyNow();
   if (e.prod != null || e.achat != null) {
-    directE.push({ t, p: e.prod ?? 0, a: e.achat ?? 0, r: e.revente ?? 0 });
+    directE.push({ t, p: e.prod ?? 0, a: e.achat ?? 0, r: e.revente ?? 0, b: e.batt ?? 0 });
     while (directE.length && t - directE[0].t > 2 * 36e5) directE.shift();
   }
   Object.values(st.devices).forEach((d) => {

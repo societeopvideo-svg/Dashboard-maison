@@ -818,3 +818,12 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .hp.photo .iso-l.reseau.coupe { stroke-width: 5; }
 .iso-pill.coupe rect { stroke: var(--alert); }
 .iso-pill.coupe text { fill: var(--alert); }
+
+/* Batterie sur le graphique Énergie : violet, bien distinct du bleu du réseau */
+:root { --ek-batt: rgba(126, 87, 194, .55); --ek-batt-l: #6A42B8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ek-batt: rgba(179, 157, 219, .5); --ek-batt-l: #C3A8F0; } }
+:root[data-theme="dark"] { --ek-batt: rgba(179, 157, 219, .5); --ek-batt-l: #C3A8F0; }
+.ek-batt { fill: var(--ek-batt); }
+.ek-batt-l { fill: none; stroke: var(--ek-batt-l); stroke-width: 1.4; }
+.lg-batt { background: var(--ek-batt-l); }
+.ek-tot-batt, .ek-tot-batt small { color: var(--ek-batt-l); }
