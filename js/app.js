@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123n';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123n';
-import { icon, TABS } from './icons.js?v=20261123n';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123o';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123o';
+import { icon, TABS } from './icons.js?v=20261123o';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -700,7 +700,7 @@ function cardAlerts(list) {
 
 function viewHome() {
   return `<div class="home-top">${cardsPresence()}${cardWeather()}</div>
-  <div class="grid">${cardAlerts(alerts())}${cardInfo()}${cardComfort()}${cardEnergy()}${cardCameras()}<div class="stack-col">${cardBlindsSummary()}${cardLightsSummary()}</div></div>`;
+  <div class="grid">${cardAlerts(alerts())}${cardInfo()}${cardComfort()}${cardEnergy()}${cardBattery().replace('class="card batt-card"', 'class="card batt-card tap" data-act="tab" data-id="energie"')}${cardCameras()}<div class="stack-col">${cardBlindsSummary()}${cardLightsSummary()}</div></div>`;
 }
 
 /* Fenêtre météo : choix rapide parmi les favoris + prévisions détaillées de la ville */
