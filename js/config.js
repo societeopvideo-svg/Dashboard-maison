@@ -84,14 +84,14 @@ export const CONFIG = {
   planMaison: {
     largeur: 1200, hauteur: 896,
     cadre: [70, 160, 1030, 520],                 // partie de l'image affichée : x, y, largeur, hauteur
-    batterie: [832, 345, 22, 46],                // à gauche du garage : x, y, largeur, hauteur
-    coffret: [974, 340, 22, 28],                 // à droite du garage
+    batterie: [974, 338, 22, 46],                // à droite du garage : x, y, largeur, hauteur
+    coffret: [832, 345, 22, 28],                 // Linky, à gauche du garage
     pylone: [1062, 190, 318],                    // x, haut, bas
-    reseau: 'M1038,206 Q1020,300 996,354',       // pylône → coffret
-    solaire: 'M898,290 L985,304 L985,340',       // bas des panneaux → coffret
-    bat: 'M854,352 L854,333 L976,318 L980,340',  // batterie → coffret (au-dessus de la porte de garage)
-    maison: 'M985,368 L985,398 L805,422 L805,380', // coffret → pièce de vie
-    etiquettes: { reseau: [1000, 182], solaire: [700, 205], bat: [800, 470], maison: [520, 505] },
+    reseau: 'M1038,206 Q1034,330 998,398 L850,418 L850,373', // pylône → pied du mur → Linky (par en dessous)
+    solaire: 'M840,295 L840,345',                // bas des panneaux → Linky
+    bat: 'M974,345 L974,322 L862,333 L855,348',  // batterie → Linky (au-dessus de la porte de garage)
+    maison: 'M836,373 L836,392 L745,404 L745,382', // Linky → pièce de vie
+    etiquettes: { reseau: [1000, 182], solaire: [700, 205], bat: [905, 492], maison: [520, 505] },
   },
 
   presence: ['ebd39cb0-9b89-4547-af1d-b88cf2eb6b57', 'fce26290-c84d-4a79-b949-1cd30ea3dd3e'],
