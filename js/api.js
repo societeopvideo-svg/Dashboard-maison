@@ -180,9 +180,13 @@ export async function geocode(name) {
 const FLUX = {
   une: 'https://www.lemonde.fr/rss/une.xml',
   monde: 'https://www.lemonde.fr/international/rss_full.xml',
-  // Région : ici (ex-France Bleu) Hérault, « À la une » classée par sa rédaction
-  region: 'https://www.francebleu.fr/rss/herault/a-la-une.xml',
+  // Région : uniquement l'Hérault. Midi Libre (édition Hérault) et 20 Minutes (Montpellier).
+  // L'ancien flux « ici Hérault » mélangeait des infos d'autres régions (Normandie…).
+  midilibre: 'https://www.midilibre.fr/herault/rss.xml',
+  vingt: 'https://www.20minutes.fr/feeds/rss-montpellier.xml',
 };
+// 20 Minutes Montpellier contient aussi de l'info nationale : on ne garde que ce qui parle de l'Hérault
+const LOCAL = /montpellier|h[ée]rault|s[èe]te|b[ée]ziers|lunel|agde|frontignan|lod[èe]ve|p[ée]zenas|thau|palavas|castelnau|lattes|mauguio|p[ée]rols|grabels|clapiers|jacou|saint-jean-de-v[ée]das|juvignac|gignac|clermont-l|ganges|occitanie/i;
 async function flux(url) {
   const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 8000);
   const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`, { signal: ctrl.signal });
@@ -199,15 +203,21 @@ async function flux(url) {
   }));
 }
 export async function actualites(n = 3) {
-  const [une, monde, region] = await Promise.all([flux(FLUX.une), flux(FLUX.monde).catch(() => []), flux(FLUX.region).catch(() => [])]);
+  const [une, monde, ml, vingt] = await Promise.all([flux(FLUX.une), flux(FLUX.monde).catch(() => []), flux(FLUX.midilibre).catch(() => []), flux(FLUX.vingt).catch(() => [])]);
+  const recent = (l) => l.slice().sort((a, b) => (b.t || 0) - (a.t || 0));
+  const mlL = recent(ml).map((x) => ({ ...x, rubrique: '', source: 'Midi Libre' }));
+  const vgL = recent(vingt.filter((x) => LOCAL.test(`${x.titre} ${x.lien}`))).map((x) => ({ ...x, rubrique: '', source: '20 Minutes' }));
   const vu = new Set();
-  const prendre = (l, n) => l.filter((x) => !vu.has(x.lien) && vu.add(x.lien)).slice(0, n);
+  // n articles pas encore pris (seuls ceux gardés sont marqués comme vus)
+  const prendre = (l, n) => { const out = []; for (const x of l) { if (out.length >= n) break; if (!vu.has(x.lien)) { vu.add(x.lien); out.push(x); } } return out; };
   const intl = (x) => x.rubrique === 'international';
   // magazine, tribunes et jeux vidéo : pas de « l'info la plus importante »
   const HORS = ['m-le-mag', 'idees', 'pixels', 'le-monde-et-vous', 'jeux'];
   const garde = (x) => !HORS.includes(x.rubrique);
   const mondeL = prendre([...une.filter(intl), ...monde.filter(garde)], n);
   const france = prendre(une.filter((x) => garde(x) && !intl(x)), n);
-  const regionL = prendre(region.map((x) => ({ ...x, rubrique: '' })), n);
+  // Région : les 2 dernières de Midi Libre + la dernière de 20 Minutes, de la plus récente à la plus ancienne
+  const regionL = recent([...prendre(mlL, vgL.length ? n - 1 : n), ...prendre(vgL, 1)]).slice(0, n);
+  if (regionL.length < n) regionL.push(...prendre(mlL, n - regionL.length));
   return { monde: mondeL, france, region: regionL, at: Date.now() };
 }

@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123s';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123s';
-import { icon, TABS } from './icons.js?v=20261123s';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123t';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123t';
+import { icon, TABS } from './icons.js?v=20261123t';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -781,11 +781,11 @@ function openMeteo() {
 }
 
 /* Info : l'actualité la plus importante, France et Monde (Le Monde, mis à jour toutes les 30 min) */
-const news = { data: store.get('actu2', null), busy: false, ouvert: null };
+const news = { data: store.get('actu3', null), busy: false, ouvert: null };
 async function refreshNews(force = false) {
   if (news.busy || (!force && news.data && Date.now() - news.data.at < 30 * 60e3)) return;
   news.busy = true;
-  try { news.data = await actualites(); store.set('actu2', news.data); }
+  try { news.data = await actualites(); store.set('actu3', news.data); }
   catch (e) { console.warn('actu', e); }
   news.busy = false;
   maybeRender();
@@ -808,11 +808,11 @@ function cardInfo() {
     return `<div class="info-it ${open ? 'open' : ''}" data-act="info" data-id="${esc(x.lien)}">
       ${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
       <div class="info-tx"><div class="info-t">${esc(x.titre)}</div>
-        <div class="info-m">${x.rubrique !== 'international' && RUBRIQUES[x.rubrique] ? `${esc(RUBRIQUES[x.rubrique])} · ` : ''}${ilya(x.t)}</div>
+        <div class="info-m">${x.source ? `${esc(x.source)} · ` : x.rubrique !== 'international' && RUBRIQUES[x.rubrique] ? `${esc(RUBRIQUES[x.rubrique])} · ` : ''}${ilya(x.t)}</div>
         ${open && x.resume ? `<p class="info-r">${esc(x.resume)}</p><a class="info-l" href="${esc(x.lien)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Lire l’article ›</a>` : ''}
       </div></div>`;
   }).join('') || '<p class="small muted">Chargement…</p>'}</div>`;
-  return `<div class="card span-2 info"><div class="section-head"><h2>Info</h2><span class="small muted">Le Monde · ici Hérault${d ? ` · ${ilya(d.at)}` : ''}</span></div>
+  return `<div class="card span-2 info"><div class="section-head"><h2>Info</h2><span class="small muted">Le Monde · Midi Libre · 20 Minutes${d ? ` · ${ilya(d.at)}` : ''}</span></div>
     ${d || news.busy ? `<div class="info-cols">${col('Monde', d?.monde)}${col('France', d?.france)}${col('Région', d?.region)}</div>` : '<p class="small muted">Actualité indisponible pour le moment.</p>'}
   </div>`;
 }
