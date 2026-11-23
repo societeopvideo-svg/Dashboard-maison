@@ -792,3 +792,17 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .mz-ombre { fill: color-mix(in srgb, var(--mz-mur) 60%, black); }
 .mz-porte { fill: color-mix(in srgb, var(--mz-blanc) 85%, var(--mz-anthra)); }
 .mz-lames-pg { fill: none; stroke: color-mix(in srgb, var(--mz-anthra) 60%, white); stroke-width: 1; opacity: .7; }
+
+/* ---------- Plan posé sur l'image de la maison ---------- */
+.hp.photo { border-radius: 14px; background: var(--surface-2); }
+.hp.photo .iso-l { stroke-width: 7; }
+.hp.photo .iso-l.on { stroke-dasharray: 5 15; }
+.hp.photo .iso-l.off { opacity: .85; }
+.iso-pylone.photo { stroke: #5A6470; stroke-width: 3; }
+.ph-batt { fill: #F4F1EA; stroke: #2E3338; stroke-width: 2; }
+.ph-coffret { fill: #D9CFC0; stroke: #2E3338; stroke-width: 2; }
+.iso-pill.grand text { font-size: 22px; }
+.hp.photo .iso-pill rect { fill: rgba(255, 255, 255, .92); }
+.hp.photo .iso-pill text { fill: #23262A; }
+.hp.photo .iso-l.on { animation-name: ph-flux; }
+@keyframes ph-flux { to { stroke-dashoffset: -20; } }

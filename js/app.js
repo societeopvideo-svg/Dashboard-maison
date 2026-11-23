@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123k';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123k';
-import { icon, TABS } from './icons.js?v=20261123k';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123l';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123l';
+import { icon, TABS } from './icons.js?v=20261123l';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -965,6 +965,39 @@ function cardBattery() {
   </div>`;
 }
 
+// Image de la maison (rendu 3D fourni par Olivier) : gardée seulement sur l'iPad, jamais dans le dépôt public.
+// Les lignes d'énergie sont posées dessus aux positions de C.planMaison (en pixels de l'image d'origine).
+let maisonCache = store.get('maisonImg', null);
+const fluxPath = (d, w, inverse, cls) => (w == null || Math.abs(w) < 20
+  ? `<path d="${d}" class="iso-l ${cls} off"/>`
+  : `<path d="${d}" class="iso-l ${cls} on ${Math.abs(w) > 2000 ? 'v3' : Math.abs(w) > 600 ? 'v2' : 'v1'}${inverse ? ' rev' : ''}"/>`);
+function planPhoto(img, e) {
+  const M = C.planMaison;
+  const pct = clamp((e.battPct ?? 0) / 100, 0, 1);
+  const kw = (w) => (w == null ? '–' : Math.abs(w) >= 1000 ? `${nf(Math.abs(w) / 1000, 2)} kW` : `${nf(Math.abs(w), 0)} W`);
+  const pill = ([x, y], txt, cls) => { const w = txt.length * 13 + 34; return `<g class="iso-pill grand ${cls}" transform="translate(${x},${y})"><rect x="${(-w / 2).toFixed(0)}" y="-21" width="${w.toFixed(0)}" height="42" rx="21"/><text text-anchor="middle" y="8">${esc(txt)}</text></g>`; };
+  const [bx, by, bw, bh] = M.batterie, [cx, cy, cw, ch] = M.coffret, [p1, p2, p3] = M.pylone;
+  const resTxt = e.revente > 0 ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= 20 ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
+  const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
+  // pylône dessiné dans le ciel, à droite (le rendu n'en a pas)
+  const pyl = `<path d="M${p1 - 14},${p3} L${p1},${p2} L${p1 + 14},${p3} M${p1 - 10},${p3 - 40} L${p1 + 10},${p3 - 40} M${p1 - 6},${p3 - 80} L${p1 + 6},${p3 - 80} M${p1 - 10},${p3 - 40} L${p1 + 6},${p3 - 80} M${p1 + 10},${p3 - 40} L${p1 - 6},${p3 - 80} M${p1 - 30},${p2 + 16} L${p1 + 30},${p2 + 16} M${p1 - 20},${p2 + 4} L${p1 + 20},${p2 + 4}" class="iso-pylone photo"/>`;
+  return `<svg class="hp photo" viewBox="${M.cadre.join(' ')}" role="img" aria-label="Plan énergie de la maison">
+    <image href="${img}" x="0" y="0" width="${M.largeur}" height="${M.hauteur}" preserveAspectRatio="xMidYMid slice"/>
+    ${pyl}
+    ${fluxPath(M.reseau, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau')}
+    ${fluxPath(M.solaire, e.prod, false, 'solaire')}
+    ${fluxPath(M.bat, e.batt, (e.batt ?? 0) > 0, 'bat')}
+    ${fluxPath(M.maison, e.maison, false, 'maison')}
+    <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="3" class="ph-batt"/>
+    <rect x="${bx + 3}" y="${(by + bh - 3 - (bh - 6) * pct).toFixed(1)}" width="${bw - 6}" height="${((bh - 6) * pct).toFixed(1)}" rx="2" class="iso-batt-niv ${pct <= 0.1 ? 'bas' : pct <= 0.25 ? 'moyen' : 'ok'}"/>
+    <rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" rx="2" class="ph-coffret"/>
+    ${pill(M.etiquettes.reseau, resTxt, 'reseau')}
+    ${pill(M.etiquettes.solaire, `Panneaux ${kw(e.prod)}`, 'solaire')}
+    ${pill(M.etiquettes.bat, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat')}
+    ${pill(M.etiquettes.maison, `Maison ${kw(e.maison)}`, 'maison')}
+  </svg>`;
+}
+
 // Plan de la maison (la vraie, d'après photo de face et vue du ciel) : plain-pied crème en L,
 // toits en tuiles à croupes, pergola à gauche, porche dans l'angle, panneaux sur l'aile du fond,
 // garage à droite. Vue presque de face ; lignes en tirets qui défilent dans le sens de l'énergie.
@@ -1076,7 +1109,7 @@ function cardHousePlan() {
   const maisonJ = e.kwhJour == null || e.prodJourKwh == null ? null : Math.max(0, e.kwhJour + e.prodJourKwh - (expJ ?? 0) - (j ? j.charge - j.decharge : 0));
   const bloc = (cls, lbl, w, jour, sous) => `<div class="hp-v ${cls}"><span class="lbl">${lbl}</span><b>${w == null ? '–' : watts(Math.abs(w))}</b><span class="small muted">${sous}</span><span class="small">${jour}</span></div>`;
   return `<div class="card span-2 hp-card"><div class="section-head"><h2>La maison en direct</h2><span class="small muted">les lignes défilent dans le sens de l’énergie · ligne fixe = rien ne passe</span></div>
-  <svg class="hp iso" viewBox="${vb}" role="img" aria-label="Plan énergie de la maison">${out.join('')}</svg>
+  ${maisonCache && C.planMaison ? planPhoto(maisonCache, e) : `<svg class="hp iso" viewBox="${vb}" role="img" aria-label="Plan énergie de la maison">${out.join('')}</svg>`}
   <div class="hp-vals">
     ${bloc('reseau', e.revente > 0 ? 'Réseau · revente' : 'Réseau · achat', e.revente > 0 ? e.revente : e.achat, `${nf(e.kwhJour, 1)} kWh achetés${expJ != null ? ` · ${nf(expJ, 1)} revendus` : ''}`, 'aujourd’hui')}
     ${bloc('solaire', 'Panneaux', e.prod, `${nf(e.prodJourKwh, 1)} kWh produits`, 'dont FHE estimé')}
@@ -1935,6 +1968,7 @@ async function openSettings(scroll = 0) {
     </div>
 
     <div class="card set-card"><h2>Thème et écran</h2>
+      <div class="field"><label>Image de la maison (page Énergie)</label><input type="file" accept="image/*" data-s="maisonimg">${maisonCache ? '<button class="btn sm" data-s-act="maisonoff">Retirer l’image</button>' : ''}<span class="hint">Gardée sur cet iPad uniquement. Les lignes d’énergie sont posées dessus.</span></div>
       <div class="field"><label>Thème</label><div class="seg">${[['auto', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) => `<button class="${(S.theme || 'auto') === v ? 'on' : ''}" data-s-act="theme" data-v="${v}">${l}</button>`).join('')}</div><span class="hint">« Système » suit le réglage clair / sombre de l’iPad.</span></div>
       <div class="field"><label>Style des icônes</label><div class="seg">${styleSeg.map(([v, l]) => `<button class="${S.iconStyle === v ? 'on' : ''}" data-s-act="style" data-v="${v}">${l}</button>`).join('')}</div></div>
       <div class="row between" style="margin:8px 0 12px;gap:14px"><div><div>Réveil à l’approche</div><div class="small muted">L’écran s’éteint après 3 min et se rallume quand le détecteur voit quelqu’un.</div></div><button class="switch ${S.reveil ? 'on' : ''}" data-s-act="reveil"></button></div>
@@ -1981,6 +2015,11 @@ function bindSettings(el) {
       if (!saveSettings2()) { delete a.saisons[t.dataset.saison]; toast('Image trop lourde pour la mémoire de l’iPad'); }
       reopen();
     }
+    else if (k === 'maisonimg' && t.files?.[0]) {
+      const data = await shrink(t.files[0], 1200);
+      if (store.set('maisonImg', data)) { maisonCache = data; toast('Image de la maison enregistrée'); } else toast('Image trop lourde pour la mémoire de l’iPad');
+      reopen();
+    }
     else if (k === 'avphoto' && t.files?.[0]) {
       const data = await shrink(t.files[0]);
       const a = avs(t.dataset.id);
@@ -2002,6 +2041,7 @@ function bindSettings(el) {
     if (!b) return;
     e.stopPropagation();
     const a = b.dataset.sAct;
+    if (a === 'maisonoff') { store.set('maisonImg', null); maisonCache = null; reopen(); return; }
     if (a === 'close') { closeSheet(); refresh(); refreshSlow(); refreshWeather(true); refreshCurve(true); }
     else if (a === 'test') {
       const out = el.querySelector('[data-test]');

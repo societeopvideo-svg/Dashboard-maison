@@ -80,6 +80,20 @@ export const CONFIG = {
 
   cameras: ['35f40034-1f6f-4207-8ff3-34795a6d32c9', '4277c191-56ec-4cfc-8c0f-89651aeac469'],
 
+  // Plan Énergie posé sur l'image de la maison (rendu 1200 × 896 px) : positions en pixels de l'image.
+  planMaison: {
+    largeur: 1200, hauteur: 896,
+    cadre: [70, 160, 1030, 520],                 // partie de l'image affichée : x, y, largeur, hauteur
+    batterie: [832, 345, 22, 46],                // à gauche du garage : x, y, largeur, hauteur
+    coffret: [974, 340, 22, 28],                 // à droite du garage
+    pylone: [1062, 190, 318],                    // x, haut, bas
+    reseau: 'M1038,206 Q1020,300 996,354',       // pylône → coffret
+    solaire: 'M898,290 L985,304 L985,340',       // bas des panneaux → coffret
+    bat: 'M854,352 L854,333 L976,318 L980,340',  // batterie → coffret (au-dessus de la porte de garage)
+    maison: 'M985,368 L985,398 L805,422 L805,380', // coffret → pièce de vie
+    etiquettes: { reseau: [1000, 182], solaire: [700, 205], bat: [800, 470], maison: [520, 505] },
+  },
+
   presence: ['ebd39cb0-9b89-4547-af1d-b88cf2eb6b57', 'fce26290-c84d-4a79-b949-1cd30ea3dd3e'],
 
   // Avatars de saison rangés dans img/avatars/ : <nom>-printemps.png, -ete, -automne, -hiver, -sortie (.png ou .jpg)
