@@ -728,3 +728,41 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .hp-v b { font-size: 22px; font-weight: 600; }
 .hp-v.reseau { border-top-color: #4C8DD6; } .hp-v.solaire { border-top-color: var(--sun); } .hp-v.bat { border-top-color: var(--ok); } .hp-v.maison { border-top-color: var(--accent); }
 .batt-card .lbl, .hp-v .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+
+/* ---------- Maison isométrique (effet 3D) ---------- */
+.hp.iso { max-height: 420px; }
+.iso path { stroke-linejoin: round; }
+.iso-sol { fill: color-mix(in srgb, var(--surface-2) 70%, var(--bg)); stroke: none; }
+.iso-pylone { fill: none; stroke: var(--grid); stroke-width: 2; stroke-linecap: round; }
+/* trois teintes par volume : dessus clair, façade moyenne, côté sombre */
+.iso-mur.f-top, .iso-garage.f-top { fill: color-mix(in srgb, var(--surface) 85%, var(--text) 4%); }
+.iso-mur.f-y, .iso-garage.f-y { fill: color-mix(in srgb, var(--surface-2) 88%, var(--text) 6%); stroke: color-mix(in srgb, var(--line) 70%, transparent); stroke-width: 1; }
+.iso-mur.f-x, .iso-garage.f-x { fill: color-mix(in srgb, var(--surface-2) 74%, var(--text) 16%); stroke: color-mix(in srgb, var(--line) 70%, transparent); stroke-width: 1; }
+.iso-garage.f-top { fill: color-mix(in srgb, var(--surface-2) 70%, var(--text) 12%); }
+.iso-toit { fill: color-mix(in srgb, var(--surface-2) 55%, var(--text) 30%); stroke: color-mix(in srgb, var(--text) 30%, transparent); stroke-width: 1; }
+.iso-toit.arriere { fill: color-mix(in srgb, var(--surface-2) 45%, var(--text) 40%); }
+.iso-pv { fill: #2B4A70; stroke: #8FA9C8; stroke-width: .7; }
+.iso-porte { fill: color-mix(in srgb, var(--surface-2) 60%, var(--text) 20%); }
+.iso-lame { fill: none; stroke: color-mix(in srgb, var(--text) 18%, transparent); stroke-width: 1; }
+.iso-fen { fill: color-mix(in srgb, var(--surface) 60%, #6E8AA8 30%); stroke: color-mix(in srgb, var(--text) 25%, transparent); stroke-width: 1; transition: fill .6s; }
+.iso-fen.on { fill: color-mix(in srgb, var(--sun) 55%, var(--surface)); }
+.iso-fen.cote.on { fill: color-mix(in srgb, var(--sun) 42%, var(--surface)); }
+.iso-batt.f-top { fill: color-mix(in srgb, var(--surface) 90%, var(--text) 4%); }
+.iso-batt.f-y { fill: var(--surface); stroke: color-mix(in srgb, var(--text) 35%, transparent); stroke-width: 1; }
+.iso-batt.f-x { fill: color-mix(in srgb, var(--surface) 70%, var(--text) 16%); }
+.iso-batt-niv { fill: var(--ok); } .iso-batt-niv.moyen { fill: var(--warn); } .iso-batt-niv.bas { fill: var(--alert); }
+.iso-coffret.f-top { fill: color-mix(in srgb, var(--surface) 80%, var(--text) 8%); }
+.iso-coffret.f-y { fill: color-mix(in srgb, var(--surface) 70%, var(--accent) 25%); }
+.iso-coffret.f-x { fill: color-mix(in srgb, var(--surface) 50%, var(--accent) 40%); }
+/* lignes et flèches */
+.iso-l { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; opacity: .45; }
+.iso-l.off { opacity: .18; stroke-dasharray: 3 6; }
+.iso-fl { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.iso-l.reseau, .iso-fl.reseau { stroke: #4C8DD6; }
+.iso-l.solaire, .iso-fl.solaire { stroke: var(--sun); }
+.iso-l.bat, .iso-fl.bat { stroke: var(--ok); }
+.iso-l.maison, .iso-fl.maison { stroke: var(--accent); }
+/* étiquettes */
+.iso-pill rect { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.iso-pill text { font: 600 12.5px/1 system-ui, -apple-system, sans-serif; fill: var(--text); }
+.iso-pill.reseau rect { stroke: #4C8DD6; } .iso-pill.solaire rect { stroke: var(--sun); } .iso-pill.bat rect { stroke: var(--ok); } .iso-pill.maison rect { stroke: var(--accent); }

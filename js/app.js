@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123g';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123g';
-import { icon, TABS } from './icons.js?v=20261123g';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123h';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123h';
+import { icon, TABS } from './icons.js?v=20261123h';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -965,61 +965,100 @@ function cardBattery() {
   </div>`;
 }
 
-// Plan de la maison : réseau, panneaux, batterie et maison reliés par des lignes
-// qui s'animent dans le sens où passe l'énergie.
+// Plan de la maison en vue isométrique (effet 3D) : chaque volume a trois faces teintées
+// (dessus, façade, côté). Des flèches circulent sur chaque ligne dans le sens de l'énergie,
+// d'autant plus vite que la puissance est forte.
 function cardHousePlan() {
   const e = energyNow();
-  const sens = (w) => (w == null || Math.abs(w) < 20 ? 'off' : 'on');
-  const reseauW = e.revente > 0 ? -e.revente : e.achat ?? null; // > 0 : on achète ; < 0 : on envoie
-  const fl = {
-    reseau: sens(reseauW) === 'off' ? 'off' : reseauW > 0 ? 'on' : 'on rev',
-    solaire: sens(e.prod),
-    batt: sens(e.batt) === 'off' ? 'off' : e.batt < 0 ? 'on' : 'on rev', // tracé batterie → compteur
-    maison: sens(e.maison),
-  };
-  // Maison vue de trois quarts : long pan de toit visible (panneaux dessus), pignon à droite.
-  // Pan de toit = parallélogramme O + s·a + t·b ; les panneaux sont posés dans ce plan.
-  const O = [300, 172], a = [140, 0], b = [70, -62];
-  const pt = (s1, t1) => [O[0] + s1 * a[0] + t1 * b[0], O[1] + s1 * a[1] + t1 * b[1]];
-  const pan = [];
-  for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) {
-    const s0 = 0.07 + c * 0.175, t0 = 0.1 + r * 0.28, ds = 0.155, dt = 0.25;
-    const q = [pt(s0, t0), pt(s0 + ds, t0), pt(s0 + ds, t0 + dt), pt(s0, t0 + dt)];
-    pan.push(`<path d="M${q.map((x) => x.map((v) => v.toFixed(1)).join(',')).join(' L')} Z" class="hp-pv"/>`);
+  const S0 = 24, K = 0.866;
+  const P = (x, y, z) => [(x - y) * K * S0, (x + y) * 0.5 * S0 - z * S0];
+  let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
+  const pt = (x, y, z) => { const [a, b] = P(x, y, z); mnX = Math.min(mnX, a); mxX = Math.max(mxX, a); mnY = Math.min(mnY, b); mxY = Math.max(mxY, b); return `${a.toFixed(1)},${b.toFixed(1)}`; };
+  const poly = (pts, cls, extra = '') => `<path d="M${pts.map((p) => pt(...p)).join(' L')} Z" class="${cls}"${extra}/>`;
+  const line = (pts) => `M${pts.map((p) => pt(...p)).join(' L')}`;
+  // pavé : dessus + face avant (y max) + face de côté (x max)
+  const box = (x0, x1, y0, y1, z0, z1, cls) =>
+    poly([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], `${cls} f-top`)
+    + poly([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], `${cls} f-y`)
+    + poly([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], `${cls} f-x`);
+  const pct = clamp((e.battPct ?? 0) / 100, 0, 1);
+  const out = [];
+  // sol
+  out.push(poly([[-7.8, 0.4, 0], [7.4, 0.4, 0], [7.4, 5.9, 0], [-7.8, 5.9, 0]], 'iso-sol'));
+  // pylône (treillis)
+  const px = -6.4, py = 4.6, ph = 5.8;
+  const pyl = [];
+  [[-0.35, -0.35], [0.35, -0.35], [0.35, 0.35], [-0.35, 0.35]].forEach(([dx, dy]) => pyl.push(line([[px + dx, py + dy, 0], [px + dx * 0.25, py + dy * 0.25, ph]])));
+  [1.4, 2.8, 4.1].forEach((z) => { const r = 0.35 - (z / ph) * 0.26; pyl.push(line([[px - r, py + r, z], [px + r, py + r, z], [px + r, py - r, z]])); });
+  pyl.push(line([[px - 1.3, py, ph - 0.9], [px + 1.3, py, ph - 0.9]]), line([[px - 0.8, py, ph - 0.3], [px + 0.8, py, ph - 0.3]]));
+  out.push(`<path d="${pyl.join(' ')}" class="iso-pylone"/>`);
+  // garage
+  out.push(box(-4.2, 0, 1.4, 4, 0, 2.3, 'iso-garage'));
+  out.push(poly([[-3.7, 4.01, 0], [-0.6, 4.01, 0], [-0.6, 4.01, 1.8], [-3.7, 4.01, 1.8]], 'iso-porte'));
+  out.push(`<path d="${[0.35, 0.7, 1.05, 1.4].map((z) => line([[-3.7, 4.02, z], [-0.6, 4.02, z]])).join(' ')}" class="iso-lame"/>`);
+  // maison
+  out.push(box(0, 6, 0, 4, 0, 2.9, 'iso-mur'));
+  out.push(poly([[6, 4, 2.9], [6, 0, 2.9], [6, 2, 5]], 'iso-mur f-x'));
+  // toit : pan arrière (silhouette) puis pan avant avec les panneaux
+  out.push(poly([[-0.3, -0.35, 2.75], [6.35, -0.35, 2.75], [6.35, 2, 5.15], [-0.3, 2, 5.15]], 'iso-toit arriere'));
+  out.push(poly([[-0.3, 4.35, 2.75], [6.35, 4.35, 2.75], [6.35, 2, 5.15], [-0.3, 2, 5.15]], 'iso-toit'));
+  const rp = (s, t, h = 0.06) => [-0.3 + 6.65 * s, 4.35 - 2.35 * t, 2.75 + 2.4 * t + h];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 6; c++) {
+    const s0 = 0.05 + c * 0.152, t0 = 0.1 + r * 0.28;
+    out.push(poly([rp(s0, t0), rp(s0 + 0.138, t0), rp(s0 + 0.138, t0 + 0.25), rp(s0, t0 + 0.25)], 'iso-pv'));
   }
+  // fenêtres (éclairées quand la maison consomme)
+  const allume = (e.maison ?? 0) > 20 ? ' on' : '';
+  [[4.25, 4.95], [5.2, 5.8]].forEach(([a, b]) => out.push(poly([[a, 4.01, 1], [b, 4.01, 1], [b, 4.01, 2.2], [a, 4.01, 2.2]], 'iso-fen' + allume)));
+  out.push(poly([[6.01, 1.2, 0.9], [6.01, 2.8, 0.9], [6.01, 2.8, 2.3], [6.01, 1.2, 2.3]], 'iso-fen cote' + allume));
+  // batterie murale + jauge sur sa face avant
+  out.push(box(0.3, 1.05, 4, 4.4, 0.2, 1.8, 'iso-batt'));
+  out.push(poly([[0.42, 4.41, 0.32], [0.93, 4.41, 0.32], [0.93, 4.41, 0.32 + 1.36 * pct], [0.42, 4.41, 0.32 + 1.36 * pct]], 'iso-batt-niv ' + (pct <= 0.1 ? 'bas' : pct <= 0.25 ? 'moyen' : 'ok')));
+  // coffret / compteur
+  out.push(box(2.6, 3.2, 4, 4.25, 0.9, 1.65, 'iso-coffret'));
+
+  // lignes d'énergie (tracées toujours dans le même sens ; les flèches vont dans le sens réel)
+  const [ax, ay] = P(px + 1.3, py, ph - 0.9), [bx, by] = P(2.5, 4.1, 2.75);
+  const reseauD = `M${pt(px + 1.3, py, ph - 0.9)} Q${((ax + bx) / 2).toFixed(1)},${(Math.max(ay, by) + 40).toFixed(1)} ${pt(2.5, 4.1, 2.75)} L${pt(2.8, 4.25, 1.65)}`;
+  const solD = line([[3.75, 4.36, 2.8], [3.75, 4.27, 1.3], [3.2, 4.26, 1.3]]);
+  const battD = line([[1.05, 4.3, 1.1], [2.6, 4.26, 1.1]]);
+  const maisonD = line([[2.9, 4.27, 0.9], [2.9, 4.3, 0.45], [5.5, 4.3, 0.45], [5.5, 4.05, 1]]);
+  const vit = (w) => (Math.abs(w) > 2000 ? 1.1 : Math.abs(w) > 600 ? 1.8 : 2.6);
+  const fleches = (d, w, inverse, cls) => {
+    if (w == null || Math.abs(w) < 20) return `<path d="${d}" class="iso-l ${cls} off"/>`;
+    const dur = vit(w);
+    const kp = inverse ? 'keyPoints="1;0" keyTimes="0;1" calcMode="linear"' : '';
+    return `<path d="${d}" class="iso-l ${cls}"/>` + [0, 1, 2].map((i) => `<path d="M-5,-4.5 L2,0 L-5,4.5" class="iso-fl ${cls}"><animateMotion dur="${dur}s" begin="${(-i * dur / 3).toFixed(2)}s" repeatCount="indefinite" rotate="auto${inverse ? '-reverse' : ''}" path="${d}" ${kp}/></path>`).join('');
+  };
+  const achatW = e.revente > 0 ? e.revente : e.achat;
+  out.push(fleches(reseauD, achatW, e.revente > 0, 'reseau'));       // achat : pylône → maison ; revente : l'inverse
+  out.push(fleches(solD, e.prod, false, 'solaire'));                   // toujours des panneaux vers le coffret
+  out.push(fleches(battD, e.batt, (e.batt ?? 0) > 0, 'bat'));        // décharge : batterie → coffret ; charge : l'inverse
+  out.push(fleches(maisonD, e.maison, false, 'maison'));
+
+  // étiquettes posées sur le dessin
+  const pill = (x, y, z, txt, cls, dx = 0, dy = 0) => { const [a, b] = P(x, y, z); const w = txt.length * 7.2 + 18; mnX = Math.min(mnX, a + dx - w / 2); mxX = Math.max(mxX, a + dx + w / 2); mnY = Math.min(mnY, b + dy - 13); return `<g class="iso-pill ${cls}" transform="translate(${(a + dx).toFixed(1)},${(b + dy).toFixed(1)})"><rect x="${(-w / 2).toFixed(1)}" y="-12" width="${w.toFixed(1)}" height="24" rx="12"/><text text-anchor="middle" y="4.5">${esc(txt)}</text></g>`; };
+  const kw = (w) => (w == null ? '–' : Math.abs(w) >= 1000 ? `${nf(Math.abs(w) / 1000, 2)} kW` : `${nf(Math.abs(w), 0)} W`);
+  const resTxt = e.revente > 0 ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= 20 ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
+  const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
+  out.push(pill(px, py, ph, resTxt, 'reseau', 0, -22));
+  out.push(pill(3, 2.2, 5.1, `Panneaux ${kw(e.prod)}`, 'solaire', 0, -26));
+  out.push(pill(0.7, 4.4, 0.2, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat', -40, 30));
+  out.push(pill(6, 4, 0, `Maison ${kw(e.maison)}`, 'maison', 70, 22));
+  const pad = 8;
+  const vb = `${(mnX - pad).toFixed(0)} ${(mnY - pad).toFixed(0)} ${(mxX - mnX + 2 * pad).toFixed(0)} ${(mxY - mnY + 2 * pad).toFixed(0)}`;
+
   const j = battJour();
   const exp = cap(C.energie.linky, 'meter_power.exported');
   const expJ = st.curve?.exp0 != null && typeof exp === 'number' && exp - st.curve.exp0 < 60 ? Math.max(0, exp - st.curve.exp0) : null;
   const maisonJ = e.kwhJour == null || e.prodJourKwh == null ? null : Math.max(0, e.kwhJour + e.prodJourKwh - (expJ ?? 0) - (j ? j.charge - j.decharge : 0));
   const bloc = (cls, lbl, w, jour, sous) => `<div class="hp-v ${cls}"><span class="lbl">${lbl}</span><b>${w == null ? '–' : watts(Math.abs(w))}</b><span class="small muted">${sous}</span><span class="small">${jour}</span></div>`;
-  return `<div class="card span-2 hp-card"><div class="section-head"><h2>La maison en direct</h2><span class="small muted">les lignes bougent dans le sens de l’énergie</span></div>
-  <svg class="hp" viewBox="20 60 600 250" role="img" aria-label="Plan énergie de la maison">
-    <line x1="10" x2="630" y1="300" y2="300" class="hp-sol"/>
-    <!-- pylône du réseau -->
-    <g class="hp-pylone"><path d="M60,300 L78,120 L96,300 M66,240 L90,240 M70,190 L86,190 M50,140 L106,140 M56,160 L100,160 M66,240 L86,190 M90,240 L70,190"/></g>
-    <!-- garage -->
-    <path d="M190,300 V214 H300 V300 Z" class="hp-mur"/><path d="M180,214 H306" class="hp-toit-plat"/>
-    <path d="M210,300 V238 H280 V300" class="hp-porte"/>${[248, 258, 268, 278, 288].map((y) => `<line x1="210" x2="280" y1="${y}" y2="${y}" class="hp-lame"/>`).join('')}
-    <!-- maison : mur long, pignon, toit -->
-    <path d="M300,300 V172 H440 V300 Z" class="hp-mur"/>
-    <path d="M440,300 V172 L510,110 L580,172 V300 Z" class="hp-mur pignon"/>
-    <path d="M300,172 L440,172 L510,110 L370,110 Z" class="hp-pan"/>
-    <path d="M292,178 L440,178 M440,178 L510,116 L588,180" class="hp-toit"/>
-    ${pan.join('')}
-    <rect x="482" y="200" width="56" height="62" rx="3" class="hp-fenetre ${fl.maison}"/><path d="M510,200 V262 M482,231 H538" class="hp-croisee"/>
-    <!-- batterie murale -->
-    <rect x="316" y="238" width="28" height="48" rx="4" class="hp-batt"/><rect x="321" y="${(281 - 38 * clamp((e.battPct ?? 0) / 100, 0, 1)).toFixed(1)}" width="18" height="${(38 * clamp((e.battPct ?? 0) / 100, 0, 1)).toFixed(1)}" rx="2" class="hp-batt-niv"/>
-    <!-- lignes d'énergie -->
-    <path d="M100,142 Q 250 200 400 258" class="hp-l reseau ${fl.reseau}"/>
-    <path d="M405,150 V256" class="hp-l solaire ${fl.solaire}"/>
-    <path d="M344,262 H398" class="hp-l bat ${fl.batt}"/>
-    <path d="M412,262 H468 V240 H482" class="hp-l maison ${fl.maison}"/>
-    <circle cx="405" cy="262" r="7" class="hp-noeud"/>
-  </svg>
+  return `<div class="card span-2 hp-card"><div class="section-head"><h2>La maison en direct</h2><span class="small muted">les flèches suivent le sens de l’énergie</span></div>
+  <svg class="hp iso" viewBox="${vb}" role="img" aria-label="Plan énergie de la maison">${out.join('')}</svg>
   <div class="hp-vals">
-    ${bloc('reseau', e.revente > 0 ? 'Réseau · envoi' : 'Réseau · achat', reseauW, `${nf(e.kwhJour, 1)} kWh achetés${expJ != null ? ` · ${nf(expJ, 1)} envoyés` : ''}`, 'aujourd’hui')}
+    ${bloc('reseau', e.revente > 0 ? 'Réseau · revente' : 'Réseau · achat', e.revente > 0 ? e.revente : e.achat, `${nf(e.kwhJour, 1)} kWh achetés${expJ != null ? ` · ${nf(expJ, 1)} revendus` : ''}`, 'aujourd’hui')}
     ${bloc('solaire', 'Panneaux', e.prod, `${nf(e.prodJourKwh, 1)} kWh produits`, 'dont FHE estimé')}
-    ${bloc('bat', e.batt > 30 ? 'Batterie · charge' : e.batt < -30 ? 'Batterie · décharge' : 'Batterie', e.batt, j ? `+${nf(j.charge, 1)} / −${nf(j.decharge, 1)} kWh` : '–', `${e.battPct == null ? '–' : nf(e.battPct, 0)} %`)}
+    ${bloc('bat', (e.batt ?? 0) > 30 ? 'Batterie · charge' : (e.batt ?? 0) < -30 ? 'Batterie · décharge' : 'Batterie', e.batt, j ? `+${nf(j.charge, 1)} / −${nf(j.decharge, 1)} kWh` : '–', `${e.battPct == null ? '–' : nf(e.battPct, 0)} %`)}
     ${bloc('maison', 'Maison', e.maison, `${nf(maisonJ, 1)} kWh consommés`, 'estimé')}
   </div></div>`;
 }
