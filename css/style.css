@@ -730,7 +730,7 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .batt-card .lbl, .hp-v .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
 
 /* ---------- Maison isométrique (effet 3D) ---------- */
-.hp.iso { max-height: 420px; }
+.hp.iso { max-height: 520px; }
 .iso path { stroke-linejoin: round; }
 .iso-sol { fill: color-mix(in srgb, var(--surface-2) 70%, var(--bg)); stroke: none; }
 .iso-pylone { fill: none; stroke: var(--grid); stroke-width: 2; stroke-linecap: round; }
@@ -754,10 +754,14 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .iso-coffret.f-top { fill: color-mix(in srgb, var(--surface) 80%, var(--text) 8%); }
 .iso-coffret.f-y { fill: color-mix(in srgb, var(--surface) 70%, var(--accent) 25%); }
 .iso-coffret.f-x { fill: color-mix(in srgb, var(--surface) 50%, var(--accent) 40%); }
-/* lignes et flèches */
-.iso-l { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; opacity: .45; }
-.iso-l.off { opacity: .18; stroke-dasharray: 3 6; }
-.iso-fl { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+/* lignes : pleines et fixes sans flux, tirets qui défilent quand l'énergie passe */
+.iso-l { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.iso-l.off { opacity: .55; }
+.iso-l.on { stroke-dasharray: 3 11; animation: iso-flux 1.6s linear infinite; }
+.iso-l.on.v2 { animation-duration: 1.05s; } .iso-l.on.v3 { animation-duration: .65s; }
+.iso-l.on.rev { animation-direction: reverse; }
+@keyframes iso-flux { to { stroke-dashoffset: -14; } }
+@media (prefers-reduced-motion: reduce) { .iso-l.on { animation: none; } }
 .iso-l.reseau, .iso-fl.reseau { stroke: #4C8DD6; }
 .iso-l.solaire, .iso-fl.solaire { stroke: var(--sun); }
 .iso-l.bat, .iso-fl.bat { stroke: var(--ok); }

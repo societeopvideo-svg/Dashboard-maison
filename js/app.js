@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123h';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123h';
-import { icon, TABS } from './icons.js?v=20261123h';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123i';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123i';
+import { icon, TABS } from './icons.js?v=20261123i';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -970,8 +970,9 @@ function cardBattery() {
 // d'autant plus vite que la puissance est forte.
 function cardHousePlan() {
   const e = energyNow();
-  const S0 = 24, K = 0.866;
-  const P = (x, y, z) => [(x - y) * K * S0, (x + y) * 0.5 * S0 - z * S0];
+  // Vue presque de face : la façade est large, la profondeur juste suggérée
+  const S0 = 30;
+  const P = (x, y, z) => [(x * 1 - y * 0.42) * S0, (x * 0.1 + y * 0.3) * S0 - z * S0];
   let mnX = Infinity, mnY = Infinity, mxX = -Infinity, mxY = -Infinity;
   const pt = (x, y, z) => { const [a, b] = P(x, y, z); mnX = Math.min(mnX, a); mxX = Math.max(mxX, a); mnY = Math.min(mnY, b); mxY = Math.max(mxY, b); return `${a.toFixed(1)},${b.toFixed(1)}`; };
   const poly = (pts, cls, extra = '') => `<path d="M${pts.map((p) => pt(...p)).join(' L')} Z" class="${cls}"${extra}/>`;
@@ -1023,13 +1024,12 @@ function cardHousePlan() {
   const solD = line([[3.75, 4.36, 2.8], [3.75, 4.27, 1.3], [3.2, 4.26, 1.3]]);
   const battD = line([[1.05, 4.3, 1.1], [2.6, 4.26, 1.1]]);
   const maisonD = line([[2.9, 4.27, 0.9], [2.9, 4.3, 0.45], [5.5, 4.3, 0.45], [5.5, 4.05, 1]]);
-  const vit = (w) => (Math.abs(w) > 2000 ? 1.1 : Math.abs(w) > 600 ? 1.8 : 2.6);
-  const fleches = (d, w, inverse, cls) => {
-    if (w == null || Math.abs(w) < 20) return `<path d="${d}" class="iso-l ${cls} off"/>`;
-    const dur = vit(w);
-    const kp = inverse ? 'keyPoints="1;0" keyTimes="0;1" calcMode="linear"' : '';
-    return `<path d="${d}" class="iso-l ${cls}"/>` + [0, 1, 2].map((i) => `<path d="M-5,-4.5 L2,0 L-5,4.5" class="iso-fl ${cls}"><animateMotion dur="${dur}s" begin="${(-i * dur / 3).toFixed(2)}s" repeatCount="indefinite" rotate="auto${inverse ? '-reverse' : ''}" path="${d}" ${kp}/></path>`).join('');
-  };
+  // Sans flux : ligne pleine et fixe. Avec flux : tirets qui défilent, dans le sens du tracé
+  // ou à l'envers ; plus la puissance est forte, plus ils vont vite.
+  const vit = (w) => (Math.abs(w) > 2000 ? 'v3' : Math.abs(w) > 600 ? 'v2' : 'v1');
+  const fleches = (d, w, inverse, cls) => (w == null || Math.abs(w) < 20
+    ? `<path d="${d}" class="iso-l ${cls} off"/>`
+    : `<path d="${d}" class="iso-l ${cls} on ${vit(w)}${inverse ? ' rev' : ''}"/>`);
   const achatW = e.revente > 0 ? e.revente : e.achat;
   out.push(fleches(reseauD, achatW, e.revente > 0, 'reseau'));       // achat : pylône → maison ; revente : l'inverse
   out.push(fleches(solD, e.prod, false, 'solaire'));                   // toujours des panneaux vers le coffret
@@ -1043,8 +1043,8 @@ function cardHousePlan() {
   const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
   out.push(pill(px, py, ph, resTxt, 'reseau', 0, -22));
   out.push(pill(3, 2.2, 5.1, `Panneaux ${kw(e.prod)}`, 'solaire', 0, -26));
-  out.push(pill(0.7, 4.4, 0.2, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat', -40, 30));
-  out.push(pill(6, 4, 0, `Maison ${kw(e.maison)}`, 'maison', 70, 22));
+  out.push(pill(0.7, 4.4, 0.2, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat', -30, 24));
+  out.push(pill(6.3, 2, 2.4, `Maison ${kw(e.maison)}`, 'maison', 62, -8));
   const pad = 8;
   const vb = `${(mnX - pad).toFixed(0)} ${(mnY - pad).toFixed(0)} ${(mxX - mnX + 2 * pad).toFixed(0)} ${(mxY - mnY + 2 * pad).toFixed(0)}`;
 
@@ -1053,7 +1053,7 @@ function cardHousePlan() {
   const expJ = st.curve?.exp0 != null && typeof exp === 'number' && exp - st.curve.exp0 < 60 ? Math.max(0, exp - st.curve.exp0) : null;
   const maisonJ = e.kwhJour == null || e.prodJourKwh == null ? null : Math.max(0, e.kwhJour + e.prodJourKwh - (expJ ?? 0) - (j ? j.charge - j.decharge : 0));
   const bloc = (cls, lbl, w, jour, sous) => `<div class="hp-v ${cls}"><span class="lbl">${lbl}</span><b>${w == null ? '–' : watts(Math.abs(w))}</b><span class="small muted">${sous}</span><span class="small">${jour}</span></div>`;
-  return `<div class="card span-2 hp-card"><div class="section-head"><h2>La maison en direct</h2><span class="small muted">les flèches suivent le sens de l’énergie</span></div>
+  return `<div class="card span-2 hp-card"><div class="section-head"><h2>La maison en direct</h2><span class="small muted">les lignes défilent dans le sens de l’énergie · ligne fixe = rien ne passe</span></div>
   <svg class="hp iso" viewBox="${vb}" role="img" aria-label="Plan énergie de la maison">${out.join('')}</svg>
   <div class="hp-vals">
     ${bloc('reseau', e.revente > 0 ? 'Réseau · revente' : 'Réseau · achat', e.revente > 0 ? e.revente : e.achat, `${nf(e.kwhJour, 1)} kWh achetés${expJ != null ? ` · ${nf(expJ, 1)} revendus` : ''}`, 'aujourd’hui')}
