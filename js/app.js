@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123q';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123q';
-import { icon, TABS } from './icons.js?v=20261123q';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123r';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123r';
+import { icon, TABS } from './icons.js?v=20261123r';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -154,7 +154,7 @@ async function refreshCurve(force = false) {
   // Selon la version de Homey, la puissance est enregistrée sous measure_power ou energy_power
   // Historique enregistré par la Homey depuis minuit : continu même quand l'iPad était en veille
   const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c, 'today'); if (r && r.length) return r; } return null; };
-  const P = ['measure_power', 'energy_power'];
+  const P = ['energy_power', 'measure_power'];
   const [sol, impI, expo, achatVA, injVA, battH] = await Promise.all([
     hist(C.energie.solaire, P),
     hist(C.energie.linky, ['meter_power.imported']),
@@ -2270,23 +2270,35 @@ async function actualiser() {
   const b = $('#btn-refresh');
   if (b.classList.contains('turn')) return;
   b.classList.add('turn');
+  // attend une promesse, mais jamais plus de « ms » : le bouton ne reste pas bloqué
+  const avec = (p, ms = 12000) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
   try {
-    const r = await fetch(`index.html?t=${Date.now()}`, { cache: 'no-store' });
-    const html = r.ok ? await r.text() : '';
-    const v = (html.match(/app\.js\?v=([\w-]+)/) || [])[1];
-    if (v && VERSION && v !== VERSION) {
-      toast('Nouvelle version du dashboard : rechargement…');
-      setTimeout(() => location.reload(), 900);
-      return;
-    }
-  } catch { /* pas de vérification de version hors ligne */ }
-  try {
-    cd.cache = {}; cs.at = 0;
-    await refresh();
-    await Promise.all([refreshSlow(), refreshWeather(true), refreshCurve(true), refreshCameras(true), refreshConso(true), refreshNews(true)].map((p) => Promise.resolve(p).catch(() => {})));
+    // 1) nouvelle version sur GitHub ? On charge l'adresse avec le numéro de version : l'iPad ne peut
+    //    pas resservir l'ancienne page gardée en cache (GitHub la garde 10 min)
+    try {
+      const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 5000);
+      const r = await fetch(`index.html?t=${Date.now()}`, { cache: 'no-store', signal: ctrl.signal });
+      const html = r.ok ? await r.text() : '';
+      const v = (html.match(/app\.js\?v=([\w-]+)/) || [])[1];
+      if (v && VERSION && v !== VERSION) {
+        toast('Nouvelle version du dashboard : chargement…');
+        setTimeout(() => location.replace(`${location.pathname}?v=${v}`), 700);
+        return;
+      }
+    } catch { /* hors ligne : pas de vérification de version */ }
+    // 2) l'essentiel : appareils, météo, courbe du jour, batterie (12 s au plus)
+    await avec(refresh(), 10000);
+    battMinuit.lu = 0;
+    await Promise.all([avec(refreshSlow()), avec(refreshWeather(true)), avec(refreshCurve(true)), avec(refreshBattJour())]);
     render();
     toast(st.ok ? 'Données actualisées' : 'Homey injoignable');
   } finally { b.classList.remove('turn'); }
+  // 3) le reste se met à jour en arrière-plan, sans bloquer le bouton ; les courbes restent affichées
+  Object.values(cd.cache).forEach((c) => { c.at = 0; });
+  cs.at = 0;
+  refreshCameras(true).catch(() => {});
+  refreshConso(true).catch(() => {});
+  refreshNews(true).catch(() => {});
 }
 
 /* ---------- Démarrage ---------- */

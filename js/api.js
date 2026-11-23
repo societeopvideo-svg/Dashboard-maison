@@ -122,6 +122,8 @@ export class Homey {
         }
       } catch (e) {
         if (i === 0) err0 = e;
+        // la forme officielle a répondu « pas de journal » ou « refusé » : inutile d'essayer les autres
+        if (i === 0 && e.status && e.status !== 400 && e.status !== 405) break;
       }
     }
     // 401/403 : la clé n'a pas le droit « Journaux » ; 404 : pas de journal sous ce nom ; sans code : réseau
@@ -182,7 +184,8 @@ const FLUX = {
   region: 'https://www.francebleu.fr/rss/herault/a-la-une.xml',
 };
 async function flux(url) {
-  const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
+  const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 8000);
+  const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`, { signal: ctrl.signal });
   if (!r.ok) throw new Error('actu');
   const j = await r.json();
   if (j.status !== 'ok') throw new Error(j.message || 'actu');
