@@ -768,5 +768,27 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .iso-l.maison, .iso-fl.maison { stroke: var(--accent); }
 /* étiquettes */
 .iso-pill rect { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
-.iso-pill text { font: 600 12.5px/1 system-ui, -apple-system, sans-serif; fill: var(--text); }
+.iso-pill text { font: 600 16.5px/1 system-ui, -apple-system, sans-serif; fill: var(--text); }
 .iso-pill.reseau rect { stroke: #4C8DD6; } .iso-pill.solaire rect { stroke: var(--sun); } .iso-pill.bat rect { stroke: var(--ok); } .iso-pill.maison rect { stroke: var(--accent); }
+
+/* ---------- La vraie maison : crépi crème, tuiles, gris anthracite ---------- */
+:root { --mz-mur: #EADCB8; --mz-tuile: #C46A45; --mz-anthra: #3E4449; --mz-blanc: #F7F5EF; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --mz-mur: #B9AC8C; --mz-tuile: #9A5236; --mz-anthra: #2A2F34; --mz-blanc: #C9CCD0; } }
+:root[data-theme="dark"] { --mz-mur: #B9AC8C; --mz-tuile: #9A5236; --mz-anthra: #2A2F34; --mz-blanc: #C9CCD0; }
+.mz-mur.f-top { fill: color-mix(in srgb, var(--mz-mur) 90%, white); }
+.mz-mur.f-y { fill: var(--mz-mur); stroke: color-mix(in srgb, var(--mz-mur) 70%, black); stroke-width: .6; }
+.mz-mur.f-x { fill: color-mix(in srgb, var(--mz-mur) 82%, black); stroke: color-mix(in srgb, var(--mz-mur) 70%, black); stroke-width: .6; }
+.mz-tuile { fill: var(--mz-tuile); stroke: color-mix(in srgb, var(--mz-tuile) 70%, black); stroke-width: .8; }
+.mz-tuile.arriere { fill: color-mix(in srgb, var(--mz-tuile) 75%, black); }
+.mz-tuile.croupe { fill: color-mix(in srgb, var(--mz-tuile) 82%, black); }
+.mz-aretier { fill: none; stroke: color-mix(in srgb, var(--mz-tuile) 60%, black); stroke-width: 1.2; }
+.mz-vitre { fill: color-mix(in srgb, #5C7590 70%, var(--mz-anthra)); stroke: var(--mz-anthra); stroke-width: 1.2; transition: fill .6s; }
+.mz-vitre.on { fill: color-mix(in srgb, var(--sun) 60%, #FFF6DC); }
+.mz-cadre { fill: var(--mz-blanc); }
+.mz-garage { fill: var(--mz-blanc); stroke: color-mix(in srgb, var(--mz-blanc) 70%, black); stroke-width: .8; }
+.mz-lame { fill: none; stroke: color-mix(in srgb, var(--mz-blanc) 72%, black); stroke-width: .8; }
+.mz-bord.f-top, .mz-bord.f-y, .mz-bord.f-x, .mz-pergola.f-top, .mz-pergola.f-y { fill: var(--mz-anthra); }
+.mz-bord.f-x, .mz-pergola.f-x { fill: color-mix(in srgb, var(--mz-anthra) 80%, black); }
+.mz-ombre { fill: color-mix(in srgb, var(--mz-mur) 60%, black); }
+.mz-porte { fill: color-mix(in srgb, var(--mz-blanc) 85%, var(--mz-anthra)); }
+.mz-lames-pg { fill: none; stroke: color-mix(in srgb, var(--mz-anthra) 60%, white); stroke-width: 1; opacity: .7; }
