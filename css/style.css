@@ -619,10 +619,14 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px;
 
 /* Plein écran : la page ne défile plus, seul le contenu défile.
    Le glissement du doigt ne remonte donc plus jusqu'à Safari (qui sortait du plein écran). */
-html.fs, html.fs body { height: 100%; overflow: hidden; overscroll-behavior: none; }
-html.fs body { position: fixed; inset: 0; display: flex; flex-direction: column; }
-html.fs header.top { position: relative; flex: none; }
-html.fs main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+/* Même chose pour l'app lancée depuis l'écran d'accueil (html.appli) : plein écran permanent */
+html.fs, html.fs body, html.appli, html.appli body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html.fs body, html.appli body { position: fixed; inset: 0; display: flex; flex-direction: column; }
+html.fs header.top, html.appli header.top { position: relative; flex: none; }
+html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+/* point de connexion : bleu quand la Homey est jointe à distance (cloud) */
+.status.ok.dist { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.ek-note { margin: 8px 0 0; }
 .meteo-src { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
 .wx-now { font-size: .6em; margin-right: 10px; vertical-align: .25em; }
 

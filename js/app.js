@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261120q';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261120q';
-import { icon, TABS } from './icons.js?v=20261120q';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123a';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123a';
+import { icon, TABS } from './icons.js?v=20261123a';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -20,7 +20,7 @@ const st = {
   tab: store.get('tab', 'accueil'), lastTouch: 0, sheet: false, unlockedUntil: 0,
   lastReq: store.get('lastReq', {}), garageSince: store.get('garageSince', null),
 };
-let homey = new Homey(S.homeyUrl, S.cle);
+let homey = new Homey(S.homeyUrl, S.cle, S.homeyCloud);
 const CAMS = C.cameras || C.alertes?.cameras || [];
 
 /* ---------- Outils ---------- */
@@ -113,8 +113,8 @@ function tick() {
 
 function setStatus() {
   const s = $('#status');
-  s.className = 'status ' + (!homey.ready ? '' : st.ok ? 'ok' : 'err');
-  s.title = !homey.ready ? 'Non configuré' : st.ok ? 'Homey connectée' : 'Homey injoignable';
+  s.className = 'status ' + (!homey.ready ? '' : st.ok ? (homey.distance ? 'ok dist' : 'ok') : 'err');
+  s.title = !homey.ready ? 'Non configuré' : st.ok ? (homey.distance ? 'Homey connectée à distance (cloud)' : 'Homey connectée à la maison') : 'Homey injoignable';
 }
 
 /* ---------- Données ---------- */
@@ -161,14 +161,33 @@ async function refreshCurve(force = false) {
     hist(C.energie.linky, ['meter_power.exported']),
   ]);
   // on garde la dernière courbe connue (et sur l'iPad) : elle reste affichée en permanence
-  if (sol && achat) { st.curve = { sol, achat, inj: inj || [], exp0: expo?.[0]?.v ?? null, jour: new Date().toDateString() }; store.set('courbeJour', st.curve); }
+  // Mémoire du jour : on fusionne avec ce qui était déjà gardé, la courbe ne fait que s'allonger.
+  // Si la Homey ne répond pas (hors connexion, droit manquant), la courbe gardée reste affichée.
+  const jour = new Date().toDateString();
+  const old = st.curve && st.curve.jour === jour ? st.curve : null;
+  if (sol && achat) {
+    st.curve = { sol: unirPts(old?.sol, sol), achat: unirPts(old?.achat, achat), inj: unirPts(old?.inj, inj || []), exp0: old?.exp0 ?? expo?.[0]?.v ?? null, jour };
+    store.set('courbeJour', st.curve);
+  }
+  st.curveErr = sol && achat ? null : homey.insightsErr || 'vide';
   maybeRender();
 }
 
-// Échantillons locaux si l'historique Homey n'est pas lisible
+// Fusion de deux séries (même créneau : la valeur la plus récente gagne), triée par heure
+function unirPts(a, b) {
+  const m = new Map();
+  (a || []).forEach((p) => m.set(p.t, p));
+  (b || []).forEach((p) => m.set(p.t, p));
+  return [...m.values()].sort((x, y) => x.t - y.t);
+}
+// Jour local (et non UTC : entre minuit et 1 h, l'UTC est encore la veille)
+const jourLocal = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Relevés de l'iPad, une fois par minute, gardés toute la journée : ils servent
+// si l'historique Homey n'est pas lisible
 function sample() {
   const now = Date.now();
-  const key = 'samples.' + new Date().toISOString().slice(0, 10);
+  const key = 'samples.' + jourLocal();
   const arr = store.get(key, []);
   if (arr.length && now - arr[arr.length - 1].t < 60e3) return;
   const e = energyNow();
@@ -177,7 +196,7 @@ function sample() {
   store.set(key, arr.slice(-1500));
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    const hierK = LS + 'samples.' + new Date(now - 864e5).toISOString().slice(0, 10);
+    const hierK = LS + 'samples.' + jourLocal(new Date(now - 864e5));
     if (k && k.startsWith(LS + 'samples.') && k !== LS + key && k !== hierK) localStorage.removeItem(k);
   }
 }
@@ -393,7 +412,7 @@ function curveSeries() {
     const dans = (l) => l.filter((p) => p.t >= t0);
     return { day0, t0, t1, prod: dans(prod), auto: dans(auto), achat: dans(achatC), src: 'Homey' };
   }
-  const arr = store.get('samples.' + new Date().toISOString().slice(0, 10), []).filter((x) => x.t >= t0);
+  const arr = store.get('samples.' + jourLocal(), []).filter((x) => x.t >= t0);
   if (arr.length < 3) return null;
   return { day0, t0, t1, prod: arr.map((s) => ({ t: s.t, v: s.p })), auto: arr.map((s) => ({ t: s.t, v: Math.max(0, s.p - (s.r || 0)) })), achat: arr.map((s) => ({ t: s.t, v: s.a })), src: 'iPad' };
 }
@@ -436,6 +455,17 @@ function chartSVG(series, h = 190) {
     <div class="cb-lbls">${heures.map((hh) => `<span style="left:${(((hh * 36e5) / span) * 100).toFixed(2)}%">${pad2(hh)}:00</span>`).join('')}</div></div></div>`;
 }
 
+// Pourquoi la courbe n'est pas complète (affiché sous le graphique, seulement en cas de souci)
+function noteCourbe() {
+  const e = st.curveErr;
+  if (!e || !homey.ready) return '';
+  const t = e === 401 || e === 403
+    ? 'La Homey refuse de donner l’historique : la clé API n’a pas le droit « Insights ». Ajoute-le à la clé (app Homey > Réglages > Clés API). En attendant, la courbe ne contient que les moments où l’iPad était allumé.'
+    : st.curve ? 'Historique de la Homey non lu pour le moment : courbe gardée en mémoire, elle sera complétée à la prochaine lecture.'
+    : 'Historique de la Homey non lu : la courbe ne contient que les moments où l’iPad était allumé.';
+  return `<p class="small muted ek-note">${t}</p>`;
+}
+
 function cardEnergy(h = 190) {
   const e = energyNow();
   // totaux du jour, comme Ecojoko : acheté | surplus envoyé au réseau
@@ -453,7 +483,7 @@ function cardEnergy(h = 190) {
       <div class="kpi"><div class="lbl">Coût du jour</div><div class="val">${nf(e.cout, 2)}<span class="unit">€</span></div><div class="small muted">abonnement compris</div></div>
     </div>
     <div class="ek-tot"><span>Aujourd’hui</span><b>${nf(e.kwhJour, 1)}<small> kWh achetés</small></b><i></i><b>${surplusJ == null ? '–' : nf(surplusJ, 2)}<small> kWh de surplus</small></b></div>
-    <div class="chart">${chartSVG(curveSeries(), h)}</div>
+    <div class="chart">${chartSVG(curveSeries(), h)}</div>${noteCourbe()}
     <div class="legend"><span><i class="lg-achat"></i>Achat au réseau</span><span><i style="background:var(--ok);opacity:.7"></i>Autoconsommation</span><span><i class="lg-surplus"></i>Surplus envoyé au réseau</span><span><i class="lg-prod"></i>Production (Hoymiles + FHE estimé)</span></div>
   </div>`;
 }
@@ -1700,7 +1730,8 @@ async function openSettings(scroll = 0) {
   <div class="grid set-grid">
 
     <div class="card set-card"><h2>Connexion à la Homey</h2>
-      <div class="field"><label>Adresse de la Homey</label><input type="text" inputmode="url" name="homey-adresse" autocomplete="off" data-lpignore="true" data-1p-ignore data-s="homeyUrl" value="${esc(S.homeyUrl)}" placeholder="exemple : https://192-168-1-XX.homey.homeylocal.com" autocapitalize="off" autocorrect="off" spellcheck="false"><span class="hint">Adresse locale sécurisée de la Homey.</span></div>
+      <div class="field"><label>Adresse de la Homey</label><input type="text" inputmode="url" name="homey-adresse" autocomplete="off" data-lpignore="true" data-1p-ignore data-s="homeyUrl" value="${esc(S.homeyUrl)}" placeholder="exemple : https://192-168-1-XX.homey.homeylocal.com" autocapitalize="off" autocorrect="off" spellcheck="false"><span class="hint">Adresse locale sécurisée, utilisée à la maison.</span></div>
+      <div class="field"><label>Adresse hors de la maison</label><input type="text" inputmode="url" name="homey-cloud" autocomplete="off" data-lpignore="true" data-1p-ignore data-s="homeyCloud" value="${esc(S.homeyCloud)}" placeholder="exemple : https://xxxxxxxx.connect.athom.com" autocapitalize="off" autocorrect="off" spellcheck="false"><span class="hint">Adresse cloud de la Homey. Le dashboard y passe tout seul quand l’adresse locale ne répond pas.</span></div>
       <div class="field"><label>Clé API</label><input type="text" class="secret" data-s="cle" value="${esc(S.cle)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" name="homey-api-key" data-lpignore="true" data-1p-ignore><span class="hint">Elle reste sur cet appareil.</span></div>
       <div class="row wrap"><button class="btn sm" data-s-act="test">Tester la connexion</button><span class="small muted" data-test></span></div>
     </div>
@@ -1746,11 +1777,11 @@ function bindSettings(el) {
   el.addEventListener('change', async (e) => {
     const t = e.target, k = t.dataset.s;
     if (!k) return;
-    if (k === 'homeyUrl' || k === 'cle') {
+    if (k === 'homeyUrl' || k === 'cle' || k === 'homeyCloud') {
       let val = t.value.trim();
-      if (k === 'homeyUrl' && val && !/^https?:\/\//.test(val)) val = 'https://' + val;
+      if (k !== 'cle' && val && !/^https?:\/\//.test(val)) val = 'https://' + val;
       S[k] = val; saveSettings();
-      homey = new Homey(S.homeyUrl, S.cle);
+      homey = new Homey(S.homeyUrl, S.cle, S.homeyCloud);
     } else if (['prixKwh', 'aboMois', 'coefFHE'].includes(k)) {
       const n = parseFloat(String(t.value).replace(',', '.'));
       if (!Number.isNaN(n)) { S[k] = n; saveSettings(); }
@@ -1789,13 +1820,18 @@ function bindSettings(el) {
     else if (a === 'test') {
       const out = el.querySelector('[data-test]');
       out.textContent = 'Test…';
-      try {
-        const d = await new Homey(S.homeyUrl, S.cle).devices();
-        out.textContent = `Connectée : ${Object.keys(d).length} appareils vus.`;
-        refreshSlow();
-      } catch (err) {
-        out.textContent = err.status === 401 || err.status === 403 ? 'Clé refusée par la Homey.' : 'Homey injoignable depuis cet iPad (adresse, Wi-Fi ou blocage du navigateur).';
-      }
+      // chaque adresse testée séparément, puis la lecture de l'historique (courbe Énergie)
+      const essai = async (url) => {
+        if (!url) return 'non renseignée';
+        try { const d = await new Homey(url, S.cle).devices(); return `OK (${Object.keys(d).length} appareils)`; }
+        catch (err) { return err.status === 401 || err.status === 403 ? 'clé refusée' : 'ne répond pas'; }
+      };
+      const [loc, dist] = await Promise.all([essai(S.homeyUrl), essai(S.homeyCloud)]);
+      const h = new Homey(S.homeyUrl, S.cle, S.homeyCloud);
+      const hist = (await h.insights(C.energie.linky, 'energy_power', 'today')) || (await h.insights(C.energie.linky, 'measure_power', 'today'));
+      const histTxt = hist?.length ? `OK (${hist.length} points depuis minuit)` : h.insightsErr === 401 || h.insightsErr === 403 ? 'refusé : ajoute le droit « Insights » à la clé' : 'non lu';
+      out.innerHTML = `À la maison : <b>${loc}</b><br>Hors de la maison : <b>${dist}</b><br>Historique énergie : <b>${histTxt}</b>`;
+      if (loc.startsWith('OK') || dist.startsWith('OK')) refreshSlow();
     } else if (a === 'geo') {
       const q = el.querySelector('[data-s="communeQ"]').value.trim();
       const out = el.querySelector('[data-geo]');
@@ -1864,10 +1900,14 @@ const fsOk = () => Boolean(document.documentElement.requestFullscreen || documen
 // pleinVoulu : le plein écran a été demandé avec le bouton et pas quitté avec lui.
 // Si Safari en sort tout seul (geste de glissement), le prochain toucher le relance.
 let pleinVoulu = false;
+// Lancé depuis l'icône de l'écran d'accueil : pas de barres Safari, donc rien à quitter.
+// C'est le seul plein écran que les gestes de l'iPad ne peuvent pas interrompre.
+const appli = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
+document.documentElement.classList.toggle('appli', appli());
 function paintFullBtn() {
   const b = $('#btn-full');
   if (!b) return;
-  b.hidden = !fsOk();
+  b.hidden = appli() || !fsOk();
   const on = Boolean(fsEl());
   document.documentElement.classList.toggle('fs', on);
   b.innerHTML = icon(on ? 'reduire' : 'pleinecran', 'line');
@@ -1880,13 +1920,26 @@ async function entrerPlein() {
 async function toggleFull() {
   try {
     if (fsEl()) { pleinVoulu = false; await (document.exitFullscreen || document.webkitExitFullscreen).call(document); }
-    else { pleinVoulu = true; await entrerPlein(); }
+    else {
+      pleinVoulu = true; await entrerPlein();
+      // une fois : expliquer comment avoir un plein écran qui ne saute jamais
+      if (!store.get('astuceAccueil', false)) { store.set('astuceAccueil', true); setTimeout(astuceAccueil, 600); }
+    }
   } catch { toast('Plein écran refusé par le navigateur'); }
   paintFullBtn();
 }
+function astuceAccueil() {
+  openSheet(`<h3>Un plein écran qui ne saute plus</h3>
+    <p>Dans Safari, le plein écran peut s’arrêter quand le doigt glisse : l’iPad le décide, la page ne peut pas l’empêcher.</p>
+    <p>Pour l’avoir en permanence : dans Safari, touche <b>Partager</b> puis <b>Sur l’écran d’accueil</b>, et ouvre ensuite le dashboard avec l’icône « Maison ». Il s’affiche alors sans aucune barre, et le glissement fait seulement défiler la page.</p>
+    <p class="small muted">L’app de l’écran d’accueil a sa propre mémoire : il faudra y saisir une fois les adresses et la clé dans les réglages.</p>
+    <div class="actions"><button class="btn primary" data-x="ok">Compris</button></div>`, (el) => {
+    el.addEventListener('click', (e) => { if (e.target.closest('[data-x]')) closeSheet(); });
+  });
+}
 function changementPlein() {
   paintFullBtn();
-  if (!fsEl() && pleinVoulu) toast('Touche l’écran pour revenir en plein écran');
+  if (!fsEl() && pleinVoulu) toast('Touche l’écran pour revenir en plein écran. Sans coupure : ajoute le dashboard à l’écran d’accueil.');
 }
 document.addEventListener('fullscreenchange', changementPlein);
 document.addEventListener('webkitfullscreenchange', changementPlein);

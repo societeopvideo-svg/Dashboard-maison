@@ -1,18 +1,48 @@
 // Accès à l'API de la Homey Pro avec une clé API (Réglages > Clés API dans Homey).
 
+// Deux adresses : locale (à la maison, rapide) et cloud Athom (partout ailleurs).
+// Si l'une ne répond pas, on bascule sur l'autre ; à distance, on reteste la locale toutes les minutes.
+const net = (u) => (u || '').trim().replace(/\/+$/, '');
 export class Homey {
-  constructor(url, key) {
-    this.url = (url || '').trim().replace(/\/+$/, '');
+  constructor(url, key, cloud) {
+    this.local = net(url);
+    this.cloud = net(cloud);
     this.key = (key || '').trim();
+    this.mode = this.local ? 'local' : 'cloud';
+    this.probeAt = 0;
+    this.insightsErr = null; // dernier refus de lecture de l'historique (403 = droit manquant)
   }
 
-  get ready() { return Boolean(this.url && this.key); }
+  get url() { return this.mode === 'cloud' && this.cloud ? this.cloud : this.local || this.cloud; }
+  get ready() { return Boolean((this.local || this.cloud) && this.key); }
+  get distance() { return this.url === this.cloud && Boolean(this.cloud); }
 
-  async req(path, { method = 'GET', body, timeout = 8000 } = {}) {
+  async req(path, opts = {}) {
+    // à distance : un essai rapide de l'adresse locale de temps en temps (retour à la maison)
+    if (this.distance && this.local && Date.now() - this.probeAt > 60e3) {
+      this.probeAt = Date.now();
+      try { await this.once(this.local, '/manager/devices/device/?probe=1', { timeout: 2500 }); this.mode = 'local'; } catch { /* toujours dehors */ }
+    }
+    try {
+      return await this.once(this.url, path, opts);
+    } catch (e) {
+      // pas de réponse (et non un refus de la Homey) : on essaie l'autre adresse
+      const autre = this.url === this.local ? this.cloud : this.local;
+      if (e.status || !autre) throw e;
+      const r = await this.once(autre, path, opts);
+      this.mode = autre === this.cloud ? 'cloud' : 'local';
+      this.probeAt = Date.now();
+      return r;
+    }
+  }
+
+  async once(base, path, { method = 'GET', body, timeout } = {}) {
+    // l'adresse locale ne répond pas hors de la maison : on n'attend pas longtemps
+    timeout = timeout || (base === this.local && this.cloud ? 4000 : 10000);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeout);
     try {
-      const res = await fetch(`${this.url}/api${path}`, {
+      const res = await fetch(`${base}/api${path}`, {
         method,
         headers: {
           Authorization: `Bearer ${this.key}`,
@@ -70,14 +100,19 @@ export class Homey {
     ];
     for (const p of tries) {
       try {
-        const r = await this.req(p, { timeout: 10000 });
+        const r = await this.req(p, { timeout: 12000 });
         const values = Array.isArray(r) ? r : r?.values;
         if (Array.isArray(values)) {
+          this.insightsErr = null;
           return values
             .map((v) => ({ t: new Date(v.t).getTime(), v: v.v }))
             .filter((v) => typeof v.v === 'number' && !Number.isNaN(v.t));
         }
-      } catch (e) { /* forme suivante */ }
+      } catch (e) {
+        // 401/403 : la clé n'a pas le droit de lire l'historique ; 404 : pas de journal sous ce nom
+        if (e.status === 401 || e.status === 403) this.insightsErr = e.status;
+        else if (!e.status) this.insightsErr = 'reseau';
+      }
     }
     return null;
   }

@@ -129,6 +129,7 @@ export const CONFIG = {
 
 export const DEFAUTS = {
   homeyUrl: '',
+  homeyCloud: '',
   cle: '',
   prixKwh: 0.1927,
   aboMois: 19.56,
