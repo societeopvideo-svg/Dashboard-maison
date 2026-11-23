@@ -756,7 +756,7 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .iso-coffret.f-x { fill: color-mix(in srgb, var(--surface) 50%, var(--accent) 40%); }
 /* lignes : pleines et fixes sans flux, tirets qui défilent quand l'énergie passe */
 .iso-l { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-.iso-l.off { opacity: .55; }
+.iso-l.off { opacity: .55; stroke-width: 1.6; }
 .iso-l.on { stroke-dasharray: 3 11; animation: iso-flux 1.6s linear infinite; }
 .iso-l.on.v2 { animation-duration: 1.05s; } .iso-l.on.v3 { animation-duration: .65s; }
 .iso-l.on.rev { animation-direction: reverse; }
@@ -797,7 +797,7 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .hp.photo { border-radius: 14px; background: var(--surface-2); }
 .hp.photo .iso-l { stroke-width: 7; }
 .hp.photo .iso-l.on { stroke-dasharray: 5 15; }
-.hp.photo .iso-l.off { opacity: .85; }
+.hp.photo .iso-l.off { opacity: .85; stroke-width: 2.5; }
 .iso-pylone.photo { stroke: #5A6470; stroke-width: 3; }
 .ph-batt { fill: #F4F1EA; stroke: #2E3338; stroke-width: 2; }
 .ph-coffret { fill: #D9CFC0; stroke: #2E3338; stroke-width: 2; }

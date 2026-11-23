@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123m';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123m';
-import { icon, TABS } from './icons.js?v=20261123m';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123n';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123n';
+import { icon, TABS } from './icons.js?v=20261123n';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -16,7 +16,7 @@ const saveSettings2 = () => store.set('settings', S);
 
 const st = {
   devices: {}, zones: {}, users: {},
-  ok: false, err: null, wx: null, wxAt: 0, curve: ((c) => (c && c.jour === new Date().toDateString() ? c : null))(store.get('courbeJour', null)), curveAt: 0,
+  ok: false, err: null, wx: null, wxAt: 0, curve: ((c) => (c && c.jour === new Date().toDateString() ? c : null))(store.get('courbeJour2', null)), curveAt: 0,
   tab: store.get('tab', 'accueil'), lastTouch: 0, sheet: false, unlockedUntil: 0,
   lastReq: store.get('lastReq', {}), garageSince: store.get('garageSince', null),
 };
@@ -124,6 +124,7 @@ async function refresh() {
     st.devices = await homey.devices();
     st.ok = true; st.err = null;
     trackGarage();
+    idxSample();
     sample();
     liveSample();
     wakeOnMotion();
@@ -154,12 +155,16 @@ async function refreshCurve(force = false) {
   // Historique enregistré par la Homey depuis minuit : continu même quand l'iPad était en veille
   const hist = async (id, caps) => { for (const c of caps) { const r = await homey.insights(id, c, 'today'); if (r && r.length) return r; } return null; };
   const P = ['measure_power', 'energy_power'];
-  const [sol, achat, inj, expo] = await Promise.all([
+  const [sol, impI, expo, achatVA, injVA] = await Promise.all([
     hist(C.energie.solaire, P),
+    hist(C.energie.linky, ['meter_power.imported']),
+    hist(C.energie.linky, ['meter_power.exported']),
     hist(C.energie.linky, P),
     hist(C.energie.linky, ['apparent_power_instant_inject_capability']),
-    hist(C.energie.linky, ['meter_power.exported']),
   ]);
+  // vraie puissance achetée / revendue = vitesse des index (la puissance apparente surestime l'achat)
+  const achat = impI?.length > 1 ? deriveW(impI) : achatVA;
+  const inj = expo?.length > 1 ? deriveW(expo) : injVA;
   // on garde la dernière courbe connue (et sur l'iPad) : elle reste affichée en permanence
   // Mémoire du jour : on fusionne avec ce qui était déjà gardé, la courbe ne fait que s'allonger.
   // Si la Homey ne répond pas (hors connexion, droit manquant), la courbe gardée reste affichée.
@@ -167,7 +172,7 @@ async function refreshCurve(force = false) {
   const old = st.curve && st.curve.jour === jour ? st.curve : null;
   if (sol && achat) {
     st.curve = { sol: unirPts(old?.sol, sol), achat: unirPts(old?.achat, achat), inj: unirPts(old?.inj, inj || []), exp0: old?.exp0 ?? expo?.[0]?.v ?? null, jour };
-    store.set('courbeJour', st.curve);
+    store.set('courbeJour2', st.curve);
   }
   st.curveErr = sol && achat ? null : homey.insightsErr || 'vide';
   maybeRender();
@@ -243,14 +248,72 @@ function maybeRender() {
   render();
 }
 
+/* ---------- Achat / revente réels ---------- */
+// La puissance « measure_power » du Linky est apparente (VA) : avec l'onduleur de la batterie elle reste
+// vers 600 VA même quand on n'achète presque rien. La vraie puissance se lit dans la vitesse à laquelle
+// avancent les index d'achat et de revente (précis au Wh). Fenêtre adaptative : au moins 5 Wh d'écart
+// ou 5 minutes au plus, 30 s au moins.
+const idx = { imp: [], exp: [] };
+const SEUIL_RESEAU = 50; // en dessous : réseau au repos (comme l'app SolaX)
+function idxSample() {
+  const t = Date.now();
+  [['imp', 'meter_power.imported'], ['exp', 'meter_power.exported']].forEach(([k, c]) => {
+    const v = cap(C.energie.linky, c);
+    if (typeof v !== 'number') return;
+    const a = idx[k];
+    if (!a.length || a[a.length - 1].v !== v || t - a[a.length - 1].t > 30e3) a.push({ t, v });
+    while (a.length && t - a[0].t > 6 * 60e3) a.shift();
+  });
+}
+function idxPower(a) {
+  if (a.length < 2) return null;
+  const fin = a[a.length - 1], now = Date.now();
+  if (now - a[0].t < 30e3) return null; // pas encore assez de recul
+  // on remonte jusqu'à avoir 5 Wh d'écart (ou le plus vieux relevé, 5 min max)
+  let deb = a[0];
+  for (let i = a.length - 2; i >= 0; i--) { deb = a[i]; if ((fin.v - a[i].v) * 1000 >= 5 && now - a[i].t >= 30e3) break; }
+  const dt = (now - deb.t) / 36e5; // en heures, jusqu'à maintenant (l'index n'a pas bougé depuis le dernier relevé)
+  const w = dt > 0 ? Math.max(0, ((fin.v - deb.v) * 1000) / dt) : null;
+  return w != null && w > 15000 ? null : w; // valeur impossible (compteur 9 kVA) : on l'ignore
+}
+// Au démarrage, les 6 dernières minutes d'index sont lues dans l'historique de la Homey
+async function seedIdx() {
+  if (!homey.ready) return;
+  for (const [k, c] of [['imp', 'meter_power.imported'], ['exp', 'meter_power.exported']]) {
+    const r = await homey.insights(C.energie.linky, c, 'lastHour');
+    if (!r?.length) continue;
+    const t0 = Date.now() - 6 * 60e3;
+    const pts = r.filter((p) => p.t >= t0);
+    // l'historique doit coller à l'index actuel (sinon ce n'est pas le bon journal) : moins de 0,5 kWh d'écart
+    const now = cap(C.energie.linky, k === 'imp' ? 'meter_power.imported' : 'meter_power.exported');
+    if (!pts.length || typeof now !== 'number' || Math.abs(now - pts[pts.length - 1].v) > 0.5) continue;
+    idx[k] = [...pts, ...idx[k].filter((p) => !pts.length || p.t > pts[pts.length - 1].t)];
+  }
+  maybeRender();
+}
+// Historique d'un index (kWh) → puissance moyenne sur chaque intervalle (W)
+function deriveW(pts) {
+  const out = [];
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (pts[i].t - pts[i - 1].t) / 36e5;
+    if (dt <= 0) continue;
+    out.push({ t: pts[i].t, v: Math.max(0, ((pts[i].v - pts[i - 1].v) * 1000) / dt) });
+  }
+  return out;
+}
+
 /* ---------- Calculs énergie ---------- */
 function energyNow() {
   const hoy = cap(C.energie.solaire, 'measure_power');
   const fhe = hoy == null ? null : hoy * S.coefFHE;
   const prod = hoy == null ? null : hoy + fhe;
-  const achatBrut = cap(C.energie.linky, 'measure_power');
-  const revente = cap(C.energie.linky, 'apparent_power_instant_inject_capability') || 0;
-  const achat = revente > 0 ? 0 : achatBrut;
+  // achat / revente réels (index du Linky) ; à défaut, les anciennes mesures
+  const pImp = idxPower(idx.imp), pExp = idxPower(idx.exp);
+  const brutA = pImp ?? cap(C.energie.linky, 'measure_power');
+  const brutR = pExp ?? (cap(C.energie.linky, 'apparent_power_instant_inject_capability') || 0);
+  // sur une même fenêtre, le compteur ne fait que l'un ou l'autre : on garde le solde
+  const achat = brutA == null ? null : Math.max(0, brutA - brutR);
+  const revente = Math.max(0, brutR - (brutA ?? 0));
   const kwhJour = cap(C.energie.compteur, 'meter_kwh_this_day');
   const aboJour = (S.aboMois * 12) / 365;
   const cout = kwhJour == null ? null : kwhJour * S.prixKwh + aboJour;
@@ -968,7 +1031,7 @@ function cardBattery() {
 // Image de la maison (rendu 3D fourni par Olivier) : gardée seulement sur l'iPad, jamais dans le dépôt public.
 // Les lignes d'énergie sont posées dessus aux positions de C.planMaison (en pixels de l'image d'origine).
 let maisonCache = store.get('maisonImg', null);
-const fluxPath = (d, w, inverse, cls) => (w == null || Math.abs(w) < 20
+const fluxPath = (d, w, inverse, cls, seuil = 20) => (w == null || Math.abs(w) < seuil
   ? `<path d="${d}" class="iso-l ${cls} off"/>`
   : `<path d="${d}" class="iso-l ${cls} on ${Math.abs(w) > 2000 ? 'v3' : Math.abs(w) > 600 ? 'v2' : 'v1'}${inverse ? ' rev' : ''}"/>`);
 function planPhoto(img, e) {
@@ -977,14 +1040,14 @@ function planPhoto(img, e) {
   const kw = (w) => (w == null ? '–' : Math.abs(w) >= 1000 ? `${nf(Math.abs(w) / 1000, 2)} kW` : `${nf(Math.abs(w), 0)} W`);
   const pill = ([x, y], txt, cls) => { const w = txt.length * 13 + 34; return `<g class="iso-pill grand ${cls}" transform="translate(${x},${y})"><rect x="${(-w / 2).toFixed(0)}" y="-21" width="${w.toFixed(0)}" height="42" rx="21"/><text text-anchor="middle" y="8">${esc(txt)}</text></g>`; };
   const [bx, by, bw, bh] = M.batterie, [cx, cy, cw, ch] = M.coffret, [p1, p2, p3] = M.pylone;
-  const resTxt = e.revente > 0 ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= 20 ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
+  const resTxt = e.revente >= SEUIL_RESEAU ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= SEUIL_RESEAU ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
   const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
   // pylône dessiné dans le ciel, à droite (le rendu n'en a pas)
   const pyl = `<path d="M${p1 - 14},${p3} L${p1},${p2} L${p1 + 14},${p3} M${p1 - 10},${p3 - 40} L${p1 + 10},${p3 - 40} M${p1 - 6},${p3 - 80} L${p1 + 6},${p3 - 80} M${p1 - 10},${p3 - 40} L${p1 + 6},${p3 - 80} M${p1 + 10},${p3 - 40} L${p1 - 6},${p3 - 80} M${p1 - 30},${p2 + 16} L${p1 + 30},${p2 + 16} M${p1 - 20},${p2 + 4} L${p1 + 20},${p2 + 4}" class="iso-pylone photo"/>`;
   return `<svg class="hp photo" viewBox="${M.cadre.join(' ')}" role="img" aria-label="Plan énergie de la maison">
     <image href="${img}" x="0" y="0" width="${M.largeur}" height="${M.hauteur}" preserveAspectRatio="xMidYMid slice"/>
     ${pyl}
-    ${fluxPath(M.reseau, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau')}
+    ${fluxPath(M.reseau, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau', SEUIL_RESEAU)}
     ${fluxPath(M.solaire, e.prod, false, 'solaire')}
     ${fluxPath(M.bat, e.batt, (e.batt ?? 0) > 0, 'bat')}
     ${fluxPath(M.maison, e.maison, false, 'maison')}
@@ -1083,10 +1146,10 @@ function cardHousePlan() {
   // Sans flux : ligne pleine et fixe. Avec flux : tirets qui défilent, dans le sens du tracé
   // ou à l'envers ; plus la puissance est forte, plus ils vont vite.
   const vit = (w) => (Math.abs(w) > 2000 ? 'v3' : Math.abs(w) > 600 ? 'v2' : 'v1');
-  const flux = (d, w, inverse, cls) => (w == null || Math.abs(w) < 20
+  const flux = (d, w, inverse, cls, seuil = 20) => (w == null || Math.abs(w) < seuil
     ? `<path d="${d}" class="iso-l ${cls} off"/>`
     : `<path d="${d}" class="iso-l ${cls} on ${vit(w)}${inverse ? ' rev' : ''}"/>`);
-  out.push(flux(reseauD, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau')); // achat : pylône → maison
+  out.push(flux(reseauD, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau', SEUIL_RESEAU)); // achat : pylône → maison
   out.push(flux(solD, e.prod, false, 'solaire'));
   out.push(flux(battD, e.batt, (e.batt ?? 0) > 0, 'bat'));                                // décharge : batterie → coffret
   out.push(flux(maisonD, e.maison, false, 'maison'));
@@ -1094,7 +1157,7 @@ function cardHousePlan() {
   // étiquettes
   const pill = (x, y, z, txt, cls, dx = 0, dy = 0) => { const [a, b] = P(x, y, z); const w = txt.length * 9.6 + 26; mnX = Math.min(mnX, a + dx - w / 2); mxX = Math.max(mxX, a + dx + w / 2); mnY = Math.min(mnY, b + dy - 18); mxY = Math.max(mxY, b + dy + 18); return `<g class="iso-pill ${cls}" transform="translate(${(a + dx).toFixed(1)},${(b + dy).toFixed(1)})"><rect x="${(-w / 2).toFixed(1)}" y="-16" width="${w.toFixed(1)}" height="32" rx="16"/><text text-anchor="middle" y="6">${esc(txt)}</text></g>`; };
   const kw = (w) => (w == null ? '–' : Math.abs(w) >= 1000 ? `${nf(Math.abs(w) / 1000, 2)} kW` : `${nf(Math.abs(w), 0)} W`);
-  const resTxt = e.revente > 0 ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= 20 ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
+  const resTxt = e.revente >= SEUIL_RESEAU ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= SEUIL_RESEAU ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
   const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
   out.push(pill(px, py, ph, resTxt, 'reseau', -30, -26));
   out.push(pill(11, 3, zr, `Panneaux ${kw(e.prod)}`, 'solaire', 0, -28));
@@ -2210,7 +2273,7 @@ $('#btn-full').addEventListener('click', toggleFull);
 paintFullBtn();
 tick(); setInterval(tick, 10e3);
 render();
-refresh().then(() => { refreshSlow(); refreshCurve(true); refreshCameras(true); refreshBattJour(); });
+refresh().then(() => { seedIdx(); refreshSlow(); refreshCurve(true); refreshCameras(true); refreshBattJour(); });
 refreshWeather(true);
 setInterval(refresh, 5e3);
 setInterval(refreshSlow, 10 * 60e3);
