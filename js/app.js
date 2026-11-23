@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123d';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123d';
-import { icon, TABS } from './icons.js?v=20261123d';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123f';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123f';
+import { icon, TABS } from './icons.js?v=20261123f';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -596,7 +596,7 @@ function cardCameras() {
     const bat = cap(id, 'measure_battery');
     const body = im.url
       ? `<img src="${im.url}" alt="">`
-      : `<div class="cam-empty">${im.err === 'none' ? 'Pas d’image transmise à Homey' : im.err ? (im.code === 401 || im.code === 403 ? `Image refusée par la Homey (code ${im.code})` : im.code ? `Image indisponible (code ${im.code})` : `Image indisponible (Homey injoignable${homey.distance ? ' à distance' : ''})`) : 'Chargement…'}</div>`;
+      : `<div class="cam-empty">${im.err === 'none' ? 'Pas d’image transmise à Homey' : im.err ? (im.code === 401 || im.code === 403 ? `Image refusée par la Homey (code ${im.code})` : im.code >= 500 ? 'La caméra n’a pas fourni d’image à la Homey (app Arlo Connect en erreur)' : im.code ? `Image indisponible (code ${im.code})` : `Image indisponible (Homey injoignable${homey.distance ? ' à distance' : ''})`) : 'Chargement…'}</div>`;
     return `<button class="cam ${motion ? 'motion' : ''}" data-act="cam" data-id="${id}">
       ${body}
       <span class="cam-info"><span>${esc(nm(id))}</span><span>${motion ? '<b class="tag warn">Mouvement</b> ' : ''}${typeof bat === 'number' ? bat + ' %' : ''}${im.at ? ' · ' + hhmm(im.at) : ''}</span></span>
@@ -908,7 +908,7 @@ function viewEnergy() {
   const moisCout = k('meter_kwh_this_month') == null ? null : k('meter_kwh_this_month') * S.prixKwh + S.aboMois * (now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
   const anCout = k('meter_kwh_this_year') == null ? null : k('meter_kwh_this_year') * S.prixKwh + S.aboMois * (now.getMonth() + now.getDate() / 31);
   const conso = visible()
-    .filter((d) => typeof d.capabilitiesObj?.measure_power?.value === 'number' && ![C.energie.linky, C.energie.solaire, C.energie.compteur].includes(d.id) && d.class !== 'solarpanel')
+    .filter((d) => typeof d.capabilitiesObj?.measure_power?.value === 'number' && ![C.energie.linky, C.energie.solaire, C.energie.compteur].includes(d.id) && d.class !== 'solarpanel' && d.class !== 'battery')
     .sort((a, b) => b.capabilitiesObj.measure_power.value - a.capabilitiesObj.measure_power.value)
     .filter((d) => d.capabilitiesObj.measure_power.value > 1)
     .slice(0, 8);
@@ -1082,7 +1082,7 @@ function viewConso() {
 /* ---------- Courbe par appareil : direct, jour, mois, année ---------- */
 function appareilsMesures() {
   return Object.values(st.devices)
-    .filter((d) => typeof d.capabilitiesObj?.measure_power?.value === 'number' && ![C.energie.linky, C.energie.solaire, C.energie.compteur, C.portail.relais].includes(d.id) && d.class !== 'solarpanel' && !C.exclureZones.includes(d.zone))
+    .filter((d) => typeof d.capabilitiesObj?.measure_power?.value === 'number' && ![C.energie.linky, C.energie.solaire, C.energie.compteur, C.portail.relais].includes(d.id) && d.class !== 'solarpanel' && d.class !== 'battery' && !C.exclureZones.includes(d.zone))
     .filter((d) => !C.exclureAppareils.includes(d.id) || C.consoInclure?.includes(d.id))
     .map((d) => ({ id: d.id, nom: d.id === C.consoGainable ? 'Gainable (estimé)' : nm(d.id), w: d.capabilitiesObj.measure_power.value, piece: zoneName(d.zone) }))
     .sort((a, b) => b.w - a.w);

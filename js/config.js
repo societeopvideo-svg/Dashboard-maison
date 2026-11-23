@@ -37,6 +37,9 @@ export const CONFIG = {
     linky: '2b5e38d3-bcbf-45fb-9d31-f82db13b37df',
     solaire: '65836992-eedc-43dc-8ebc-79ce0be177e7',
     compteur: '586f5281-61d3-4a8d-96cc-47d2ce42050d',
+    // Batterie SolaX (app locale fr.maison34.solaxbatterie) : measure_power < 0 = décharge vers la maison,
+    // > 0 = charge ; measure_battery en % ; meter_power.charged / .discharged en kWh cumulés
+    batterie: 'a29a5019-89ec-45c0-a985-59e26cfb0bc7',
   },
 
   volets: {
