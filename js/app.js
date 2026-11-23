@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123o';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123o';
-import { icon, TABS } from './icons.js?v=20261123o';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123p';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123p';
+import { icon, TABS } from './icons.js?v=20261123p';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -340,6 +340,8 @@ function alerts() {
   const out = [];
   const A = C.alertes;
   if (cap(A.fumee, 'alarm_smoke') === true) out.push({ lvl: 'alert', txt: 'Fumée détectée', sub: nm(A.fumee), fire: true });
+  const cp = coupureReseau();
+  if (cp) out.push({ lvl: 'alert', txt: 'Coupure du réseau électrique', sub: `La batterie alimente la maison (${nf(cap(C.energie.batterie, 'measure_battery'), 0)} %)`, when: cp.depuis ? `depuis ${hhmm(cp.depuis)}` : '', tab: 'energie' });
   if (st.garageSince && Date.now() - st.garageSince > A.portailMinutes * 60e3) {
     out.push({ lvl: 'warn', txt: 'Portail du garage ouvert', when: `depuis ${Math.round((Date.now() - st.garageSince) / 60e3)} min`, tab: 'volets' });
   }
@@ -970,6 +972,13 @@ function cardBatteries() {
 
 /* Énergie détaillée */
 /* ---------- Batterie et plan de la maison ---------- */
+// Coupure du réseau : l'onduleur SolaX est en mode EPS (secours), la batterie alimente la maison
+function coupureReseau() {
+  const o = dev(C.energie.batterie)?.capabilitiesObj?.alarm_generic;
+  if (o?.value !== true) return null;
+  const t = o.lastUpdated ? new Date(o.lastUpdated).getTime() : null;
+  return { depuis: t, minutes: t ? Math.max(0, Math.round((Date.now() - t) / 60e3)) : null };
+}
 // kWh chargés / déchargés aujourd'hui : compteur actuel − compteur à minuit.
 // Valeur de minuit lue dans l'historique Homey ; sinon, premier relevé vu aujourd'hui (gardé sur l'iPad).
 const battMinuit = { jour: null, c0: null, d0: null, depuis: null, lu: 0 };
@@ -1016,15 +1025,18 @@ function cardBattery() {
   const e = energyNow();
   const w = e.batt;
   const etat = w == null ? 'repos' : w > 30 ? 'charge' : w < -30 ? 'decharge' : 'repos';
-  const lib = { charge: 'En charge', decharge: 'Alimente la maison', repos: 'Au repos' }[etat];
+  const cp = coupureReseau();
+  const lib = cp ? 'Secours EPS' : { charge: 'En charge', decharge: 'Alimente la maison', repos: 'Au repos' }[etat];
+  const derniere = cap(B, 'derniere_coupure');
   const restant = e.battPct == null ? null : (e.battPct / 100) * S.battKwh;
   const j = battJour();
   const depuis = j?.depuis ? ` <span class="muted">(depuis ${hhmm(j.depuis)})</span>` : '';
-  return `<div class="card batt-card"><div class="section-head"><h2>Batterie</h2><span class="tag ${etat === 'repos' ? '' : 'accent'}">${lib}</span></div>
+  return `<div class="card batt-card${cp ? ' eps' : ''}"><div class="section-head"><h2>Batterie</h2><span class="tag ${cp ? 'alerte' : etat === 'repos' ? '' : 'accent'}">${lib}</span></div>
+    ${cp ? `<div class="batt-eps"><b>⚡ Coupure du réseau</b><span>La batterie alimente la maison${cp.depuis ? ` depuis ${hhmm(cp.depuis)} (${cp.minutes} min)` : ''}</span></div>` : ''}
     ${battGauge(e.battPct, etat)}
     <div class="batt-info"><div><div class="lbl">Énergie restante</div><b>${restant == null ? '–' : `≈ ${nf(restant, 1)} kWh`}</b><div class="small muted">sur ${nf(S.battKwh, 1)} kWh</div></div>
       <div><div class="lbl">${etat === 'decharge' ? 'Donne' : 'Reçoit'}</div><b>${w == null ? '–' : watts(Math.abs(w))}</b><div class="small muted">${cap(B, 'measure_temperature') != null ? `${nf(cap(B, 'measure_temperature'), 0)} °C · ` : ''}${cap(B, 'measure_voltage') != null ? `${nf(cap(B, 'measure_voltage'), 0)} V` : ''}</div></div></div>
-    <div class="batt-jour"><div><span class="lbl">Chargé aujourd’hui</span><b>${j ? nf(j.charge, 2) : '–'}<small> kWh</small></b></div><i></i><div><span class="lbl">Déchargé aujourd’hui</span><b>${j ? nf(j.decharge, 2) : '–'}<small> kWh</small></b></div></div>${depuis ? `<p class="small muted" style="margin:6px 0 0">Comptage${depuis}</p>` : ''}
+    <div class="batt-jour"><div><span class="lbl">Chargé aujourd’hui</span><b>${j ? nf(j.charge, 2) : '–'}<small> kWh</small></b></div><i></i><div><span class="lbl">Déchargé aujourd’hui</span><b>${j ? nf(j.decharge, 2) : '–'}<small> kWh</small></b></div></div>${depuis ? `<p class="small muted" style="margin:6px 0 0">Comptage${depuis}</p>` : ''}${!cp && derniere ? `<p class="small muted" style="margin:6px 0 0">Dernière coupure du réseau : ${esc(derniere)}</p>` : ''}
   </div>`;
 }
 
@@ -1040,21 +1052,21 @@ function planPhoto(img, e) {
   const kw = (w) => (w == null ? '–' : Math.abs(w) >= 1000 ? `${nf(Math.abs(w) / 1000, 2)} kW` : `${nf(Math.abs(w), 0)} W`);
   const pill = ([x, y], txt, cls) => { const w = txt.length * 13 + 34; return `<g class="iso-pill grand ${cls}" transform="translate(${x},${y})"><rect x="${(-w / 2).toFixed(0)}" y="-21" width="${w.toFixed(0)}" height="42" rx="21"/><text text-anchor="middle" y="8">${esc(txt)}</text></g>`; };
   const [bx, by, bw, bh] = M.batterie, [cx, cy, cw, ch] = M.coffret, [p1, p2, p3] = M.pylone;
-  const resTxt = e.revente >= SEUIL_RESEAU ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= SEUIL_RESEAU ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
+  const resTxt = coupureReseau() ? 'Réseau coupé' : e.revente >= SEUIL_RESEAU ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= SEUIL_RESEAU ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
   const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
   // pylône dessiné dans le ciel, à droite (le rendu n'en a pas)
   const pyl = `<path d="M${p1 - 14},${p3} L${p1},${p2} L${p1 + 14},${p3} M${p1 - 10},${p3 - 40} L${p1 + 10},${p3 - 40} M${p1 - 6},${p3 - 80} L${p1 + 6},${p3 - 80} M${p1 - 10},${p3 - 40} L${p1 + 6},${p3 - 80} M${p1 + 10},${p3 - 40} L${p1 - 6},${p3 - 80} M${p1 - 30},${p2 + 16} L${p1 + 30},${p2 + 16} M${p1 - 20},${p2 + 4} L${p1 + 20},${p2 + 4}" class="iso-pylone photo"/>`;
   return `<svg class="hp photo" viewBox="${M.cadre.join(' ')}" role="img" aria-label="Plan énergie de la maison">
     <image href="${img}" x="0" y="0" width="${M.largeur}" height="${M.hauteur}" preserveAspectRatio="xMidYMid slice"/>
     ${pyl}
-    ${fluxPath(M.reseau, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau', SEUIL_RESEAU)}
+    ${coupureReseau() ? `<path d="${M.reseau}" class="iso-l reseau coupe"/>` : fluxPath(M.reseau, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau', SEUIL_RESEAU)}
     ${fluxPath(M.solaire, e.prod, false, 'solaire')}
     ${fluxPath(M.bat, e.batt, (e.batt ?? 0) > 0, 'bat')}
     ${fluxPath(M.maison, e.maison, false, 'maison')}
     <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="3" class="ph-batt"/>
     <rect x="${bx + 3}" y="${(by + bh - 3 - (bh - 6) * pct).toFixed(1)}" width="${bw - 6}" height="${((bh - 6) * pct).toFixed(1)}" rx="2" class="iso-batt-niv ${pct <= 0.1 ? 'bas' : pct <= 0.25 ? 'moyen' : 'ok'}"/>
     <rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" rx="2" class="ph-coffret"/>
-    ${pill(M.etiquettes.reseau, resTxt, 'reseau')}
+    ${pill(M.etiquettes.reseau, resTxt, coupureReseau() ? 'reseau coupe' : 'reseau')}
     ${pill(M.etiquettes.solaire, `Panneaux ${kw(e.prod)}`, 'solaire')}
     ${pill(M.etiquettes.bat, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat')}
     ${pill(M.etiquettes.maison, `Maison ${kw(e.maison)}`, 'maison')}
@@ -1149,7 +1161,7 @@ function cardHousePlan() {
   const flux = (d, w, inverse, cls, seuil = 20) => (w == null || Math.abs(w) < seuil
     ? `<path d="${d}" class="iso-l ${cls} off"/>`
     : `<path d="${d}" class="iso-l ${cls} on ${vit(w)}${inverse ? ' rev' : ''}"/>`);
-  out.push(flux(reseauD, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau', SEUIL_RESEAU)); // achat : pylône → maison
+  out.push(coupureReseau() ? `<path d="${reseauD}" class="iso-l reseau coupe"/>` : flux(reseauD, e.revente > 0 ? e.revente : e.achat, e.revente > 0, 'reseau', SEUIL_RESEAU)); // achat : pylône → maison
   out.push(flux(solD, e.prod, false, 'solaire'));
   out.push(flux(battD, e.batt, (e.batt ?? 0) > 0, 'bat'));                                // décharge : batterie → coffret
   out.push(flux(maisonD, e.maison, false, 'maison'));
@@ -1157,9 +1169,9 @@ function cardHousePlan() {
   // étiquettes
   const pill = (x, y, z, txt, cls, dx = 0, dy = 0) => { const [a, b] = P(x, y, z); const w = txt.length * 9.6 + 26; mnX = Math.min(mnX, a + dx - w / 2); mxX = Math.max(mxX, a + dx + w / 2); mnY = Math.min(mnY, b + dy - 18); mxY = Math.max(mxY, b + dy + 18); return `<g class="iso-pill ${cls}" transform="translate(${(a + dx).toFixed(1)},${(b + dy).toFixed(1)})"><rect x="${(-w / 2).toFixed(1)}" y="-16" width="${w.toFixed(1)}" height="32" rx="16"/><text text-anchor="middle" y="6">${esc(txt)}</text></g>`; };
   const kw = (w) => (w == null ? '–' : Math.abs(w) >= 1000 ? `${nf(Math.abs(w) / 1000, 2)} kW` : `${nf(Math.abs(w), 0)} W`);
-  const resTxt = e.revente >= SEUIL_RESEAU ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= SEUIL_RESEAU ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
+  const resTxt = coupureReseau() ? 'Réseau coupé' : e.revente >= SEUIL_RESEAU ? `Revente ${kw(e.revente)}` : (e.achat ?? 0) >= SEUIL_RESEAU ? `Achat ${kw(e.achat)}` : 'Réseau au repos';
   const batTxt = (e.batt ?? 0) > 30 ? `Charge ${kw(e.batt)}` : (e.batt ?? 0) < -30 ? `Décharge ${kw(e.batt)}` : 'Batterie au repos';
-  out.push(pill(px, py, ph, resTxt, 'reseau', -30, -26));
+  out.push(pill(px, py, ph, resTxt, coupureReseau() ? 'reseau coupe' : 'reseau', -30, -26));
   out.push(pill(11, 3, zr, `Panneaux ${kw(e.prod)}`, 'solaire', 0, -28));
   out.push(pill(16.7, W + 0.4, 0, `${batTxt} · ${e.battPct == null ? '–' : nf(e.battPct, 0)} %`, 'bat', -20, 34));
   out.push(pill(3, F, 0, `Maison ${kw(e.maison)}`, 'maison', 0, 34));

@@ -806,3 +806,15 @@ html.fs main#view, html.appli main#view { flex: 1; min-height: 0; overflow-y: au
 .hp.photo .iso-pill text { fill: #23262A; }
 .hp.photo .iso-l.on { animation-name: ph-flux; }
 @keyframes ph-flux { to { stroke-dashoffset: -20; } }
+
+/* ---------- Coupure du réseau (batterie en secours EPS) ---------- */
+.batt-card.eps { box-shadow: 0 0 0 2px var(--alert), var(--shadow); }
+.tag.alerte { background: color-mix(in srgb, var(--alert) 16%, transparent); color: var(--alert); }
+.batt-eps { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 12px; padding: 10px 14px; border-radius: 14px;
+  background: color-mix(in srgb, var(--alert) 13%, var(--surface)); border: 1px solid color-mix(in srgb, var(--alert) 45%, transparent); }
+.batt-eps b { color: var(--alert); font-size: 16px; }
+.batt-eps span { font-size: 13px; color: var(--text); }
+.iso-l.reseau.coupe { stroke: var(--alert); stroke-dasharray: 2 9; opacity: .9; stroke-width: 3; animation: none; }
+.hp.photo .iso-l.reseau.coupe { stroke-width: 5; }
+.iso-pill.coupe rect { stroke: var(--alert); }
+.iso-pill.coupe text { fill: var(--alert); }
