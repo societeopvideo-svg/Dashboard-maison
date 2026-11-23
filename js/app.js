@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123r';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123r';
-import { icon, TABS } from './icons.js?v=20261123r';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261123s';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123s';
+import { icon, TABS } from './icons.js?v=20261123s';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -1425,8 +1425,9 @@ function liveSample() {
 }
 
 const cd = { cache: {}, busy: false };
-// Jour = 24 h glissantes, Mois = 30 jours glissants, Année = 12 mois glissants (jamais de remise à zéro)
-const RES = { direct: 'lastHour', jour: 'last24Hours', mois: 'last31Days', annee: 'last2Years' };
+// Jour = aujourd'hui de minuit à minuit (comme la tuile Énergie), Mois = 30 jours glissants, Année = 12 mois glissants
+const RES = { direct: 'lastHour', jour: 'today', mois: 'last31Days', annee: 'last2Years' };
+const minuitAuj = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const FENETRE = { jour: 864e5, mois: 30 * 864e5, annee: 365 * 864e5 };
 
 const cdFile = new Set();
@@ -1446,10 +1447,10 @@ async function chargeAppareil(id, vue) {
   cd.busy = true;
   try {
     let pts = null;
-    for (const capId of ['measure_power', 'energy_power']) { pts = await homey.insights(id, capId, RES[vue]); if (pts && pts.length) break; }
+    for (const capId of ['energy_power', 'measure_power']) { pts = await homey.insights(id, capId, RES[vue]); if (pts && pts.length) break; }
     let kwhPts = null;
     if (has(id, 'meter_power')) kwhPts = await homey.insights(id, 'meter_power', RES[vue]);
-    const debut = FENETRE[vue] ? Date.now() - FENETRE[vue] : 0;
+    const debut = vue === 'jour' ? minuitAuj() : FENETRE[vue] ? Date.now() - FENETRE[vue] : 0;
     const coupe = (l) => (l || []).filter((p) => p.t >= debut).map((p) => ({ t: p.t, v: Math.round(p.v * 100) / 100 }));
     if ((pts && pts.length) || !c) cd.cache[key] = { at: Date.now(), pts: coupe(pts), kwhPts: coupe(kwhPts) };
     else c.at = Date.now(); // rien reçu : on garde la dernière courbe connue
@@ -1514,9 +1515,10 @@ function calculPeriode(id, vue) {
     pts = c ? prolonge(c.pts, direct[id] || []) : null;
     t1 = now; t0 = now - FENETRE[vue];
     if (vue === 'jour') {
-      // repères aux vraies heures, toutes les 8 h
-      const dd = new Date(t0); dd.setMinutes(0, 0, 0);
-      for (let t = dd.getTime() + 36e5; t < t1; t += 36e5) if (new Date(t).getHours() % 8 === 0) ticks.push({ t, l: new Date(t).getHours() === 0 ? 'minuit' : `${new Date(t).getHours()} h` });
+      // de minuit à minuit : l'axe est fixe, la courbe avance jusqu'au trait « maintenant »
+      t0 = d0.getTime(); t1 = t0 + 864e5;
+      if (pts) pts = pts.filter((p) => p.t >= t0);
+      [0, 6, 12, 18, 24].forEach((hh) => ticks.push({ t: t0 + hh * 36e5, l: `${pad2(hh)}:00` }));
     } else if (vue === 'mois') {
       for (let k = 3; k >= 0; k--) { const t = now - k * 8 * 864e5 - 864e5; ticks.push({ t, l: new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }).replace('.', '') }); }
     } else {
@@ -1526,7 +1528,8 @@ function calculPeriode(id, vue) {
   }
   let kwh = null;
   const c = cd.cache[`${id}|${vue}`];
-  if (vue !== 'direct' && c && c.kwhPts.length >= 2) kwh = Math.max(0, c.kwhPts[c.kwhPts.length - 1].v - c.kwhPts[0].v);
+  const kp = c && vue === 'jour' ? c.kwhPts.filter((p) => p.t >= t0) : c?.kwhPts || [];
+  if (vue !== 'direct' && kp.length >= 2) kwh = Math.max(0, kp[kp.length - 1].v - kp[0].v);
   if (kwh == null && pts && pts.length >= 2) { kwh = 0; for (let i = 1; i < pts.length; i++) kwh += ((pts[i - 1].v + pts[i].v) / 2) * ((pts[i].t - pts[i - 1].t) / 36e5) / 1000; }
   const pic = pts && pts.length ? Math.max(...pts.map((p) => p.v)) : null;
   return { pts, t0, t1, ticks, kwh, pic };
@@ -1536,14 +1539,14 @@ function tuileAppareil(x, cls) {
   const vue = cdVues[x.id] || 'direct';
   const r = calculPeriode(x.id, vue);
   const seg = [['direct', 'Direct'], ['jour', 'Jour'], ['mois', 'Mois'], ['annee', 'Année']].map(([v, l]) => `<button class="${vue === v ? 'on' : ''}" data-act="ctvue" data-id="${x.id}" data-v="${v}">${l}</button>`).join('');
-  const periode = { direct: '1 h', jour: '24 h', mois: '30 j', annee: '12 mois' }[vue];
+  const periode = { direct: '1 h', jour: 'aujourd’hui', mois: '30 j', annee: '12 mois' }[vue];
   // Couleur selon la consommation en cours : vert faible, orange moyenne, rouge élevée
   const [s1, s2] = C.seuilsConso || [150, 800];
   const niveau = x.w < 1 ? '' : x.w < s1 ? 'c-faible' : x.w < s2 ? 'c-moyen' : 'c-eleve';
   return `<div class="card ctile ${cls} ${niveau}">
     <div class="ct-head"><div class="ct-nm"><b>${esc(x.nom)}</b><small>${esc(x.piece || '')}</small></div><span class="ct-w">${watts(x.w)}</span></div>
     <div class="seg ct-seg">${seg}</div>
-    ${r.pts === null ? '<p class="small muted ct-wait">Chargement de la courbe…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84, now: vue === 'direct' })}
+    ${r.pts === null ? '<p class="small muted ct-wait">Chargement de la courbe…</p>' : lineSVG(r.pts, { t0: r.t0, t1: r.t1, ticks: r.ticks, h: 84, now: vue === 'direct' || vue === 'jour' })}
     <div class="ct-foot"><span>${periode} : <b>${r.kwh == null ? '–' : `${nf(r.kwh, r.kwh < 10 ? 2 : 1)} kWh`}</b>${r.kwh == null ? '' : ` · ${nf(r.kwh * S.prixKwh, 2)} €`}</span><span class="muted">pic ${r.pic == null ? '–' : watts(r.pic)}</span></div>
   </div>`;
 }
