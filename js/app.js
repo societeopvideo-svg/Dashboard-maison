@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261123t';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261123t';
-import { icon, TABS } from './icons.js?v=20261123t';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261125a';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261125a';
+import { icon, TABS } from './icons.js?v=20261125a';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -513,14 +513,15 @@ function chartSVG(series, h = 190) {
   const ligne = (pts, sgn) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(sgn * p.v)}`).join(' ');
   // bande entre deux courbes (de « bas » à « v ») : l'achat posé au-dessus de la batterie
   const bande = (pts) => (pts.length ? `M${pts.map((p) => `${X(p.t)},${Y(p.v)}`).join(' L')} L${pts.slice().reverse().map((p) => `${X(p.t)},${Y(p.bas)}`).join(' L')} Z` : '');
-  // graduations en watts (texte à gauche, hors du dessin)
+  // graduations en watts (texte à gauche, hors du dessin) ; placées en pixels : la colonne
+  // des chiffres est plus haute que le dessin (elle inclut la ligne des heures)
   const grad = [];
   for (let v = haut; v >= -bas; v -= step) grad.push(v);
   const lignesG = grad.filter((v) => v !== 0).map((v) => `<line x1="0" x2="${W}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" vector-effect="non-scaling-stroke"/>`).join('');
   const heures = [1, 5, 9, 13, 17, 21];
   const lignesH = heures.map((hh) => `<line x1="${X(t0 + hh * 36e5)}" x2="${X(t0 + hh * 36e5)}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
   const now = X(Date.now());
-  return `<div class="ek"><div class="ek-y">${grad.filter((v) => v !== -bas).map((v) => `<span style="top:${((Y(v) / H) * 100).toFixed(2)}%">${v === 0 ? '0' : `${nf(v, 0)} W`}</span>`).join('')}</div>
+  return `<div class="ek"><div class="ek-y">${grad.filter((v) => v !== -bas).map((v) => `<span style="top:${Y(v)}px">${v === 0 ? '0' : `${nf(v, 0)} W`}</span>`).join('')}</div>
     <div class="ek-plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">
       ${lignesG}${lignesH}
       <path d="${aire(batt, 1)}" class="ek-batt"/>
