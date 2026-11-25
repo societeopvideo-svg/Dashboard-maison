@@ -1,6 +1,6 @@
-import { CONFIG as C, DEFAUTS } from './config.js?v=20261125a';
-import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261125a';
-import { icon, TABS } from './icons.js?v=20261125a';
+import { CONFIG as C, DEFAUTS } from './config.js?v=20261125b';
+import { Homey, forecast, geocode, actualites, previsions } from './api.js?v=20261125b';
+import { icon, TABS } from './icons.js?v=20261125b';
 
 /* ---------- Stockage local (iPad uniquement) ---------- */
 const LS = 'maison.v1.';
@@ -1475,12 +1475,15 @@ function lineSVG(pts, { t0, t1, h = 180, ticks = [], centre = false, inverse = f
   const tNow = Date.now();
   const pos = (t) => (inverse ? (t1 - t) / span : (t - t0) / span);
   const X = (t) => (pos(t) * W).toFixed(1);
-  const Y = (v) => (H - (Math.max(0, v) / vmax) * (H - 6)).toFixed(1);
+  const base = H - 1; // le zéro : un pixel au-dessus du bord pour que l'axe et une courbe à 0 restent visibles
+  const Y = (v) => (base - (Math.max(0, v) / vmax) * (base - 6)).toFixed(1);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t)},${Y(p.v)}`).join(' ');
-  const area = pts.length ? `M${X(pts[0].t)},${H} ${pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ')} L${X(pts[pts.length - 1].t)},${H} Z` : '';
+  const area = pts.length ? `M${X(pts[0].t)},${base} ${pts.map((p) => `L${X(p.t)},${Y(p.v)}`).join(' ')} L${X(pts[pts.length - 1].t)},${base} Z` : '';
   const marque = repereNow && tNow > t0 && tNow < t1 ? `<line x1="${X(tNow)}" x2="${X(tNow)}" y1="0" y2="${H}" stroke="var(--accent)" stroke-width="1" stroke-opacity=".6" vector-effect="non-scaling-stroke"/>` : '';
   const grid = ticks.map((tk) => `<line x1="${X(tk.t)}" x2="${X(tk.t)}" y1="0" y2="${H}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('');
-  const mid = [0.5].map((f) => `<line x1="0" x2="${W}" y1="${Y(vmax / 1.1 * f)}" y2="${Y(vmax / 1.1 * f)}" stroke="var(--line)" vector-effect="non-scaling-stroke"/>`).join('');
+  // repère de mi-hauteur en pointillés (simple grille) ; l'axe du temps est le trait plein du zéro, en bas
+  const mid = [0.5].map((f) => `<line x1="0" x2="${W}" y1="${Y(vmax / 1.1 * f)}" y2="${Y(vmax / 1.1 * f)}" stroke="var(--line)" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>`).join('')
+    + `<line x1="0" x2="${W}" y1="${base}" y2="${base}" class="ek-zero" vector-effect="non-scaling-stroke"/>`;
   return `<div class="chart-wrap"><svg class="cline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${h}px">${grid}${mid}
     <path d="${area}" fill="var(--accent)" fill-opacity=".16"/>
     <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>${marque}</svg>
